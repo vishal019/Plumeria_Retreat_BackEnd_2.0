@@ -79,19 +79,49 @@ router.post('/upload', async (req, res) => {
   }
 });
 
-// DELETE /admin/gallery/:id - delete image
-router.delete('/:id', async (req, res) => {
+// Update image handler (supports PUT /:id, POST /update/:id, POST /:id)
+const handleUpdateGalleryImage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { alt_text, alt, category } = req.body;
+    const finalAlt = alt_text !== undefined ? alt_text : alt;
+
+    const [result] = await pool.execute(
+      'UPDATE gallery_images SET alt = COALESCE(?, alt), category = COALESCE(?, category) WHERE id = ?',
+      [finalAlt !== undefined ? String(finalAlt) : null, category ? String(category) : null, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
+    res.json({ success: true, message: 'Image updated successfully' });
+  } catch (error) {
+    console.error('Error updating gallery image:', error);
+    res.status(500).json({ error: 'Failed to update image', details: error.message });
+  }
+};
+
+router.put('/:id', handleUpdateGalleryImage);
+router.post('/update/:id', handleUpdateGalleryImage);
+router.post('/:id', handleUpdateGalleryImage);
+
+// Delete image handler (supports DELETE /:id, POST /delete/:id)
+const handleDeleteGalleryImage = async (req, res) => {
   try {
     const { id } = req.params;
     const [result] = await pool.execute('DELETE FROM gallery_images WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Image not found' });
     }
-    res.json({ success: true });
+    res.json({ success: true, message: 'Image deleted successfully' });
   } catch (error) {
     console.error('Error deleting image:', error);
-    res.status(500).json({ error: 'Failed to delete image' });
+    res.status(500).json({ error: 'Failed to delete image', details: error.message });
   }
-});
+};
+
+router.delete('/:id', handleDeleteGalleryImage);
+router.post('/delete/:id', handleDeleteGalleryImage);
 
 module.exports = router;

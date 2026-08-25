@@ -1,3 +1,4 @@
+
 const express = require('express');
 const routes = express.Router();
 const path = require('path');
@@ -77,6 +78,112 @@ const handleMediaUpload = (req, res) => {
 routes.post('/upload-media', uploadMiddleware, handleMediaUpload);
 routes.post('/upload-video', uploadMiddleware, handleMediaUpload);
 routes.post('/upload', uploadMiddleware, handleMediaUpload);
+
+// GET /admin/properties/stored-videos - List all videos from server uploads directory & database
+routes.get('/stored-videos', async (req, res) => {
+    try {
+        const uploadsDir = path.join(__dirname, '..', 'uploads');
+        const host = req.get('host');
+        const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+        const videoExtensions = new Set(['.mp4', '.webm', '.mov', '.mkv', '.avi', '.ogv']);
+        const storedVideosMap = new Map();
+
+        // 1. Scan uploads directory
+        if (fs.existsSync(uploadsDir)) {
+            try {
+                const files = await fs.promises.readdir(uploadsDir);
+                for (const file of files) {
+                    const ext = path.extname(file).toLowerCase();
+                    if (videoExtensions.has(ext)) {
+                        const filePath = path.join(uploadsDir, file);
+                        try {
+                            const stats = await fs.promises.stat(filePath);
+                            const sizeMb = (stats.size / (1024 * 1024)).toFixed(2) + ' MB';
+                            const fullUrl = `${protocol}://${host}/uploads/${file}`;
+                            storedVideosMap.set(file, {
+                                id: `file_${file}`,
+                                fileName: file,
+                                url: fullUrl,
+                                relativeUrl: `/uploads/${file}`,
+                                size: sizeMb,
+                                sizeBytes: stats.size,
+                                createdAt: stats.birthtime || stats.mtime,
+                                guestName: '',
+                                caption: '',
+                                source: 'storage',
+                            });
+                        } catch (_) {}
+                    }
+                }
+            } catch (fsErr) {
+                console.warn('[stored-videos] Error reading uploads dir:', fsErr.message);
+            }
+        }
+
+        // 2. Query accommodations table for any previously saved guest stories
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const [rows] = await connection.execute(
+                'SELECT id, name, guest_stories FROM accommodations WHERE guest_stories IS NOT NULL AND guest_stories != ""'
+            );
+
+            for (const row of rows) {
+                const stories = parseJSONField(row.guest_stories, []);
+                if (Array.isArray(stories)) {
+                    for (const s of stories) {
+                        if (s && s.videoUrl && typeof s.videoUrl === 'string' && s.videoUrl.trim() !== '') {
+                            const vUrl = s.videoUrl.trim();
+                            const urlFileName = path.basename(vUrl.split('?')[0]);
+                            const existing = storedVideosMap.get(urlFileName);
+
+                            if (existing) {
+                                if (!existing.guestName && s.guestName) existing.guestName = s.guestName;
+                                if (!existing.caption && s.caption) existing.caption = s.caption;
+                                if (!existing.thumbnail && s.thumbnail) existing.thumbnail = s.thumbnail;
+                                if (!existing.accommodationName) existing.accommodationName = row.name;
+                            } else {
+                                storedVideosMap.set(urlFileName || vUrl, {
+                                    id: s.id ? String(s.id) : `story_${Date.now()}_${Math.random()}`,
+                                    fileName: s.fileName || urlFileName || 'Video Story',
+                                    url: vUrl,
+                                    relativeUrl: vUrl.startsWith('http') ? vUrl : `/uploads/${urlFileName}`,
+                                    size: s.fileSize || '',
+                                    guestName: s.guestName || '',
+                                    caption: s.caption || '',
+                                    thumbnail: s.thumbnail || '',
+                                    accommodationName: row.name,
+                                    source: 'database',
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (dbErr) {
+            console.warn('[stored-videos] Error querying accommodations stories:', dbErr.message);
+        } finally {
+            if (connection) connection.release();
+        }
+
+        const videosList = Array.from(storedVideosMap.values());
+        videosList.sort((a, b) => {
+            if (a.createdAt && b.createdAt) {
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            }
+            return 0;
+        });
+
+        res.json({
+            success: true,
+            total: videosList.length,
+            videos: videosList,
+        });
+    } catch (error) {
+        console.error('Error fetching stored videos:', error);
+        res.status(500).json({ error: 'Failed to fetch stored videos', details: error.message });
+    }
+});
 
 const createConnection = async () => {
     return await pool.getConnection();
@@ -589,21 +696,18 @@ routes.post('/accommodations', async (req, res) => {
         } = basicInfo;
 
         const extended = extractExtendedFields(basicInfo, {}, req.body);
-        const address = location?.address || '';
-        const cityId = location?.cityId ? Number(location.cityId) : null;
-        const latitude = location?.coordinates?.latitude ? Number(location.coordinates.latitude) : null;
-        const longitude = location?.coordinates?.longitude ? Number(location.coordinates.longitude) : null;
+        const address = location?.address || null;
+        const cityId = location?.cityId || null;
+        const latitude = location?.coordinates?.latitude || null;
+        const longitude = location?.coordinates?.longitude || null;
         const amenityIds = amenities?.ids || [];
 
         const packageName = packages?.name || null;
         const packageDescription = packages?.description || null;
         const packageImages = packages?.images || [];
-        const adultPrice = Number(packages?.pricing?.adult) || 0;
-        const childPrice = Number(packages?.pricing?.child) || 0;
-        const maxGuests = Number(packages?.pricing?.maxGuests) || 2;
-        const maxPersonVilla = Number(MaxPersonVilla) || 0;
-        const ratePerPerson = Number(RatePersonVilla || basicInfo.RatePerPerson) || 0;
-        const finalOwnerId = ownerId ? Number(ownerId) : null;
+        const adultPrice = packages?.pricing?.adult || 0;
+        const childPrice = packages?.pricing?.child || 0;
+        const maxGuests = packages?.pricing?.maxGuests || 2;
 
         const [result] = await connection.execute(
             `INSERT INTO accommodations
@@ -614,30 +718,30 @@ routes.post('/accommodations', async (req, res) => {
              meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                String(name || '').trim(),
-                description || '',
-                String(type || 'Villa').trim(),
-                Number(capacity) || 1,
-                Number(rooms) || 1,
-                Number(price) || 0,
-                JSON.stringify(features || []),
-                JSON.stringify(images || []),
+                name,
+                description || null,
+                type,
+                capacity,
+                rooms,
+                price,
+                JSON.stringify(features),
+                JSON.stringify(images),
                 available ? 1 : 0,
-                finalOwnerId,
-                cityId,
+                ownerId || null,
+                cityId || null,
                 address,
                 latitude,
                 longitude,
-                JSON.stringify(amenityIds || []),
+                JSON.stringify(amenityIds),
                 packageName,
                 packageDescription,
-                JSON.stringify(packageImages || []),
+                JSON.stringify(packageImages),
                 adultPrice,
                 childPrice,
                 maxGuests,
-                maxPersonVilla,
-                ratePerPerson,
-                JSON.stringify(mealPlans || []),
+                MaxPersonVilla || null,
+                RatePersonVilla || null,
+                JSON.stringify(mealPlans),
                 extended.metaTitle,
                 extended.metaDescription,
                 extended.pageHeading,
@@ -654,7 +758,6 @@ routes.post('/accommodations', async (req, res) => {
         );
 
         res.status(201).json({
-            success: true,
             message: 'Accommodation created successfully',
             id: result.insertId,
             name,
@@ -704,27 +807,27 @@ routes.put('/accommodations/:id', async (req, res) => {
             packages = {},
         } = req.body;
 
-        const name = String(basicInfo.name ?? current.name ?? '').trim();
-        const description = basicInfo.description ?? current.description ?? '';
-        const type = String(basicInfo.type ?? current.type ?? 'Villa').trim();
-        const capacity = Number(basicInfo.capacity ?? current.capacity) || 1;
-        const rooms = Number(basicInfo.rooms ?? current.rooms) || 1;
-        const price = Number(basicInfo.price ?? current.price) || 0;
-        const MaxPersonVilla = Number(basicInfo.MaxPersonVilla ?? current.MaxPersonVilla) || 0;
-        const RatePerPerson = Number(basicInfo.RatePersonVilla ?? basicInfo.RatePerPerson ?? current.RatePerPerson) || 0;
-        const mealPlans = basicInfo.mealPlans !== undefined ? JSON.stringify(basicInfo.mealPlans || []) : current.meal_plans;
+        const name = basicInfo.name ?? current.name;
+        const description = basicInfo.description ?? current.description;
+        const type = basicInfo.type ?? current.type;
+        const capacity = basicInfo.capacity ?? current.capacity;
+        const rooms = basicInfo.rooms ?? current.rooms;
+        const price = basicInfo.price ?? current.price;
+        const MaxPersonVilla = basicInfo.MaxPersonVilla ?? current.MaxPersonVilla;
+        const RatePerPerson = basicInfo.RatePersonVilla ?? current.RatePerPerson;
+        const mealPlans = basicInfo.mealPlans !== undefined ? JSON.stringify(basicInfo.mealPlans) : current.meal_plans;
 
-        const address = location.address ?? current.address ?? '';
-        const cityId = location.cityId ? Number(location.cityId) : (current.city_id ? Number(current.city_id) : null);
-        const latitude = location.coordinates?.latitude ? Number(location.coordinates.latitude) : (current.latitude ? Number(current.latitude) : null);
-        const longitude = location.coordinates?.longitude ? Number(location.coordinates.longitude) : (current.longitude ? Number(current.longitude) : null);
+        const address = location.address ?? current.address;
+        const cityId = location.cityId ?? current.city_id;
+        const latitude = location.coordinates?.latitude ?? current.latitude;
+        const longitude = location.coordinates?.longitude ?? current.longitude;
 
-        const packageName = packages.name ?? current.package_name ?? null;
-        const packageDescription = packages.description ?? current.package_description ?? null;
-        const adultPrice = Number(packages.pricing?.adult ?? current.adult_price) || 0;
-        const childPrice = Number(packages.pricing?.child ?? current.child_price) || 0;
-        const maxGuests = Number(packages.pricing?.maxGuests ?? current.max_guests) || 2;
-        const finalOwnerId = ownerId ? Number(ownerId) : (current.owner_id ? Number(current.owner_id) : null);
+        const packageName = packages.name ?? current.package_name;
+        const packageDescription = packages.description ?? current.package_description;
+        const adultPrice = packages.pricing?.adult ?? current.adult_price;
+        const childPrice = packages.pricing?.child ?? current.child_price;
+        const maxGuests = packages.pricing?.maxGuests ?? current.max_guests;
+        const finalOwnerId = ownerId ?? current.owner_id;
 
         let finalAvailable;
         if (basicInfo.available === true || basicInfo.available === 1) {
@@ -732,7 +835,7 @@ routes.put('/accommodations/:id', async (req, res) => {
         } else if (basicInfo.available === false || basicInfo.available === 0) {
             finalAvailable = 0;
         } else {
-            finalAvailable = current.available ? 1 : 0;
+            finalAvailable = current.available;
         }
 
         const finalFeatures = basicInfo.features ? JSON.stringify(basicInfo.features) : current.features;
@@ -744,7 +847,7 @@ routes.put('/accommodations/:id', async (req, res) => {
         if (!name || !type) {
             throw new Error('Missing required fields: name and type');
         }
-        if (capacity <= 0 || rooms <= 0 || price <= 0) {
+        if (Number(capacity) <= 0 || Number(rooms) <= 0 || Number(price) <= 0) {
             throw new Error('Capacity, rooms, and price must be positive numbers');
         }
 
@@ -763,11 +866,11 @@ routes.put('/accommodations/:id', async (req, res) => {
                 updated_at = CURRENT_TIMESTAMP()
             WHERE id = ?`,
             [
-                name, description, type, capacity, rooms,
-                price, finalFeatures, finalImages, finalAvailable, finalOwnerId,
+                name, description, type, Number(capacity), Number(rooms),
+                Number(price), finalFeatures, finalImages, finalAvailable, finalOwnerId,
                 cityId, address, latitude, longitude, finalAmenityIds,
                 packageName, packageDescription, finalPackageImages,
-                adultPrice, childPrice, maxGuests,
+                Number(adultPrice), Number(childPrice), Number(maxGuests),
                 MaxPersonVilla, RatePerPerson, mealPlans,
                 extended.metaTitle, extended.metaDescription, extended.pageHeading,
                 extended.imageDetails, extended.roomNumbers, extended.activities,
@@ -780,7 +883,6 @@ routes.put('/accommodations/:id', async (req, res) => {
         await connection.commit();
 
         res.status(200).json({
-            success: true,
             id,
             message: result.changedRows === 0
                 ? 'No changes detected. Accommodation not updated.'
