@@ -3783,8 +3783,8 @@ router.put("/:id/status", async (req, res) => {
   }
 });
 
-// PUT /admin/bookings/:id or /admin/bookings/edit/:id - Full Booking Edit & Reschedule
-router.put(["/:id", "/edit/:id", "/update/:id"], async (req, res) => {
+// PUT & POST /admin/bookings/:id or /admin/bookings/edit/:id - Full Booking Edit & Reschedule
+const handleBookingUpdate = async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -3829,8 +3829,6 @@ router.put(["/:id", "/edit/:id", "/update/:id"], async (req, res) => {
     const updatedTotal = total_amount !== undefined ? parseFloat(total_amount) : current.total_amount;
     const updatedAdvance = advance_amount !== undefined ? parseFloat(advance_amount) : current.advance_amount;
     const updatedPaymentStatus = payment_status !== undefined ? payment_status : current.payment_status;
-    const updatedSpecialRequests = special_requests !== undefined ? special_requests : current.special_requests;
-    const updatedMealPlan = meal_plan !== undefined ? meal_plan : current.meal_plan;
 
     await pool.execute(
       `UPDATE bookings SET 
@@ -3848,9 +3846,7 @@ router.put(["/:id", "/edit/:id", "/update/:id"], async (req, res) => {
         food_jain = ?,
         total_amount = ?,
         advance_amount = ?,
-        payment_status = ?,
-        special_requests = ?,
-        meal_plan = ?
+        payment_status = ?
       WHERE id = ?`,
       [
         updatedGuestName,
@@ -3868,11 +3864,21 @@ router.put(["/:id", "/edit/:id", "/update/:id"], async (req, res) => {
         updatedTotal,
         updatedAdvance,
         updatedPaymentStatus,
-        updatedSpecialRequests,
-        updatedMealPlan,
         id,
       ]
     );
+
+    // Update optional columns if they exist in schema
+    if (meal_plan !== undefined) {
+      try {
+        await pool.execute("UPDATE bookings SET meal_plan = ? WHERE id = ?", [meal_plan, id]);
+      } catch (_) {}
+    }
+    if (special_requests !== undefined) {
+      try {
+        await pool.execute("UPDATE bookings SET special_requests = ? WHERE id = ?", [special_requests, id]);
+      } catch (_) {}
+    }
 
     res.json({
       success: true,
@@ -3888,7 +3894,10 @@ router.put(["/:id", "/edit/:id", "/update/:id"], async (req, res) => {
     console.error("Error updating booking:", error);
     res.status(500).json({ success: false, error: "Failed to update booking", details: error.message });
   }
-});
+};
+
+router.put(["/:id", "/edit/:id", "/update/:id"], handleBookingUpdate);
+router.post(["/:id", "/edit/:id", "/update/:id"], handleBookingUpdate);
 
 // GET /admin/bookings/room-occupancy - Get total rooms booked for a specific date
 

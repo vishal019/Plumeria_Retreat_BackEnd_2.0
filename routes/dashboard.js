@@ -537,17 +537,26 @@ router.post('/booking/:id/action', async (req, res) => {
           food_veg = COALESCE(?, food_veg),
           food_nonveg = COALESCE(?, food_nonveg),
           food_jain = COALESCE(?, food_jain),
-          payment_status = COALESCE(?, payment_status),
-          special_requests = COALESCE(?, special_requests),
-          meal_plan = COALESCE(?, meal_plan)
+          payment_status = COALESCE(?, payment_status)
         WHERE id = ?`,
         [
           guest_name, guest_phone, guest_email, total_amount, advance_amount,
           inDate, outDate, accommodation_id, adults, children, rooms,
-          food_veg, food_nonveg, food_jain, payment_status, special_requests,
-          meal_plan, id
+          food_veg, food_nonveg, food_jain, payment_status, id
         ]
       );
+
+      if (meal_plan !== undefined) {
+        try {
+          await pool.query('UPDATE bookings SET meal_plan = ? WHERE id = ?', [meal_plan, id]);
+        } catch (_) {}
+      }
+      if (special_requests !== undefined) {
+        try {
+          await pool.query('UPDATE bookings SET special_requests = ? WHERE id = ?', [special_requests, id]);
+        } catch (_) {}
+      }
+
       return res.json({ success: true, message: 'Booking updated in database' });
     }
 
