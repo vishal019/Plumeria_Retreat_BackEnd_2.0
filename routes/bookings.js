@@ -3754,7 +3754,7 @@ router.put("/:id/status", async (req, res) => {
         .json({ success: false, error: "Payment status is required" });
     }
 
-    const validStatuses = ["pending", "success", "failed", "expired"];
+    const validStatuses = ["pending", "success", "failed", "expired", "partial", "cancelled", "paid"];
 
     if (!validStatuses.includes(payment_status)) {
       return res
@@ -3780,6 +3780,113 @@ router.put("/:id/status", async (req, res) => {
     res
       .status(500)
       .json({ success: false, error: "Failed to update payment status" });
+  }
+});
+
+// PUT /admin/bookings/:id or /admin/bookings/edit/:id - Full Booking Edit & Reschedule
+router.put(["/:id", "/edit/:id", "/update/:id"], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      guest_name,
+      guest_email,
+      guest_phone,
+      check_in,
+      check_out,
+      accommodation_id,
+      adults,
+      children,
+      rooms,
+      food_veg,
+      food_nonveg,
+      food_jain,
+      total_amount,
+      advance_amount,
+      payment_status,
+      special_requests,
+      meal_plan,
+    } = req.body;
+
+    const [existing] = await pool.execute("SELECT * FROM bookings WHERE id = ?", [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, error: "Booking not found" });
+    }
+
+    const current = existing[0];
+
+    const updatedGuestName = guest_name !== undefined ? guest_name : current.guest_name;
+    const updatedEmail = guest_email !== undefined ? guest_email : current.guest_email;
+    const updatedPhone = guest_phone !== undefined ? guest_phone : current.guest_phone;
+    const updatedCheckIn = check_in !== undefined ? check_in : current.check_in;
+    const updatedCheckOut = check_out !== undefined ? check_out : current.check_out;
+    const updatedAccId = accommodation_id !== undefined ? accommodation_id : current.accommodation_id;
+    const updatedAdults = adults !== undefined ? parseInt(adults, 10) : current.adults;
+    const updatedChildren = children !== undefined ? parseInt(children, 10) : current.children;
+    const updatedRooms = rooms !== undefined ? parseInt(rooms, 10) : current.rooms;
+    const updatedVeg = food_veg !== undefined ? parseInt(food_veg, 10) : current.food_veg;
+    const updatedNonVeg = food_nonveg !== undefined ? parseInt(food_nonveg, 10) : current.food_nonveg;
+    const updatedJain = food_jain !== undefined ? parseInt(food_jain, 10) : current.food_jain;
+    const updatedTotal = total_amount !== undefined ? parseFloat(total_amount) : current.total_amount;
+    const updatedAdvance = advance_amount !== undefined ? parseFloat(advance_amount) : current.advance_amount;
+    const updatedPaymentStatus = payment_status !== undefined ? payment_status : current.payment_status;
+    const updatedSpecialRequests = special_requests !== undefined ? special_requests : current.special_requests;
+    const updatedMealPlan = meal_plan !== undefined ? meal_plan : current.meal_plan;
+
+    await pool.execute(
+      `UPDATE bookings SET 
+        guest_name = ?,
+        guest_email = ?,
+        guest_phone = ?,
+        check_in = ?,
+        check_out = ?,
+        accommodation_id = ?,
+        adults = ?,
+        children = ?,
+        rooms = ?,
+        food_veg = ?,
+        food_nonveg = ?,
+        food_jain = ?,
+        total_amount = ?,
+        advance_amount = ?,
+        payment_status = ?,
+        special_requests = ?,
+        meal_plan = ?
+      WHERE id = ?`,
+      [
+        updatedGuestName,
+        updatedEmail,
+        updatedPhone,
+        updatedCheckIn,
+        updatedCheckOut,
+        updatedAccId,
+        updatedAdults,
+        updatedChildren,
+        updatedRooms,
+        updatedVeg,
+        updatedNonVeg,
+        updatedJain,
+        updatedTotal,
+        updatedAdvance,
+        updatedPaymentStatus,
+        updatedSpecialRequests,
+        updatedMealPlan,
+        id,
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: "Booking updated successfully",
+      data: {
+        id,
+        guest_name: updatedGuestName,
+        check_in: updatedCheckIn,
+        check_out: updatedCheckOut,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating booking:", error);
+    res.status(500).json({ success: false, error: "Failed to update booking", details: error.message });
   }
 });
 

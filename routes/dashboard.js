@@ -485,17 +485,68 @@ router.post('/booking/:id/action', async (req, res) => {
     }
 
     if (action === 'reschedule') {
-      if (!checkIn || !checkOut) {
+      const inDate = checkIn || req.body.check_in;
+      const outDate = checkOut || req.body.check_out;
+      if (!inDate || !outDate) {
         return res.status(400).json({ success: false, message: 'Check-in and check-out dates required' });
       }
-      await pool.query('UPDATE bookings SET check_in = ?, check_out = ? WHERE id = ?', [checkIn, checkOut, id]);
+      await pool.query(
+        'UPDATE bookings SET check_in = ?, check_out = ?, total_amount = COALESCE(?, total_amount), advance_amount = COALESCE(?, advance_amount) WHERE id = ?',
+        [inDate, outDate, total_amount, advance_amount, id]
+      );
       return res.json({ success: true, message: 'Booking dates updated in database' });
     }
 
     if (action === 'edit') {
+      const {
+        guest_name,
+        guest_phone,
+        guest_email,
+        total_amount,
+        advance_amount,
+        check_in,
+        check_out,
+        accommodation_id,
+        adults,
+        children,
+        rooms,
+        food_veg,
+        food_nonveg,
+        food_jain,
+        payment_status,
+        special_requests,
+        meal_plan
+      } = req.body;
+
+      const inDate = check_in || checkIn;
+      const outDate = check_out || checkOut;
+
       await pool.query(
-        `UPDATE bookings SET guest_name = ?, guest_phone = ?, guest_email = ?, total_amount = ?, advance_amount = ? WHERE id = ?`,
-        [guest_name, guest_phone, guest_email, total_amount, advance_amount, id]
+        `UPDATE bookings SET 
+          guest_name = COALESCE(?, guest_name), 
+          guest_phone = COALESCE(?, guest_phone), 
+          guest_email = COALESCE(?, guest_email), 
+          total_amount = COALESCE(?, total_amount), 
+          advance_amount = COALESCE(?, advance_amount),
+          check_in = COALESCE(?, check_in),
+          check_out = COALESCE(?, check_out),
+          accommodation_id = COALESCE(?, accommodation_id),
+          adults = COALESCE(?, adults),
+          children = COALESCE(?, children),
+          rooms = COALESCE(?, rooms),
+          food_veg = COALESCE(?, food_veg),
+          food_nonveg = COALESCE(?, food_nonveg),
+          food_jain = COALESCE(?, food_jain),
+          payment_status = COALESCE(?, payment_status),
+          special_requests = COALESCE(?, special_requests),
+          meal_plan = COALESCE(?, meal_plan)
+        WHERE id = ?`,
+        [
+          guest_name, guest_phone, guest_email, total_amount, advance_amount,
+          inDate, outDate, accommodation_id, adults, children, rooms,
+          food_veg, food_nonveg, food_jain, payment_status, special_requests,
+          meal_plan, id
+        ]
       );
       return res.json({ success: true, message: 'Booking updated in database' });
     }
