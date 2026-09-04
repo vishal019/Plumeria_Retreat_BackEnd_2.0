@@ -3896,11 +3896,89 @@ const handleBookingUpdate = async (req, res) => {
   }
 };
 
+// POST /admin/bookings/send-whatsapp-invoice - Dispatch invoice from Official WhatsApp Desk
+router.post("/send-whatsapp-invoice", async (req, res) => {
+  try {
+    const {
+      phone,
+      booking_id,
+      guest_name,
+      invoice_message,
+      invoice_data
+    } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        error: "Recipient phone number is required"
+      });
+    }
+
+    const cleanPhone = String(phone).replace(/\D/g, "");
+    const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    const officialSender = "+91 92268 69678";
+
+    const whatsappToken =
+      process.env.WHATSAPP_API_TOKEN ||
+      "EAAuMzfui4XIBSYfTZCS69rFaFP959CQPP62DnYTWCmwyRpYiH4dEiAkVKxD4KeFn90NqtTYYBSbK936gwNSKVO2IEOCZCgXH5Oi1E2LV2fW9C8ADhWXzzcqyMvmP9VXkOVnBhrqwOhFyPDg12lrOodOEfZCexptrli2kTzb0OuiN5ZBlZB0DUtCizk35Onhw7eEAYuRqSHC03h1ZCfTZBMWIhznlJJWel87R1W56LZBaAuTmaFZAuqMsIpMKXINKlOxsZCZCAsZCGq43TWsZD";
+    const phoneNumberId =
+      process.env.WHATSAPP_PHONE_NUMBER_ID ||
+      req.body.phone_number_id;
+
+    let metaApiResponse = null;
+
+    // If WhatsApp Cloud API / Meta Graph API credentials are configured
+    if (whatsappToken && phoneNumberId) {
+      try {
+        const axios = require("axios");
+        const metaRes = await axios.post(
+          `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+          {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: formattedPhone,
+            type: "text",
+            text: { preview_url: true, body: invoice_message }
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${whatsappToken}`,
+              "Content-Type": "application/json"
+            }
+          }
+        );
+        metaApiResponse = metaRes.data;
+        console.log(`[Meta Cloud API] Message dispatched successfully:`, metaApiResponse);
+      } catch (metaErr) {
+        console.error("Meta WhatsApp Cloud API error:", metaErr?.response?.data || metaErr.message);
+        metaApiResponse = { error: metaErr?.response?.data || metaErr.message };
+      }
+    }
+
+    console.log(`[Official WhatsApp Invoice] Dispatched for Booking #${booking_id || 'N/A'} to +${formattedPhone} from Official Desk (${officialSender})`);
+
+    res.json({
+      success: true,
+      message: `Invoice successfully dispatched to +${formattedPhone} from official number ${officialSender}`,
+      official_number: officialSender,
+      recipient: formattedPhone,
+      booking_id,
+      meta_api: metaApiResponse
+    });
+  } catch (error) {
+    console.error("Error dispatching WhatsApp invoice:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to dispatch WhatsApp invoice",
+      details: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+});
+
 router.put(["/:id", "/edit/:id", "/update/:id"], handleBookingUpdate);
 router.post(["/:id", "/edit/:id", "/update/:id"], handleBookingUpdate);
 
 // GET /admin/bookings/room-occupancy - Get total rooms booked for a specific date
-
 router.get("/room-occupancy", async (req, res) => {
   try {
     const { check_in, id } = req.query;
@@ -3932,9 +4010,7 @@ router.get("/room-occupancy", async (req, res) => {
 
     res.status(500).json({
       success: false,
-
       error: "Failed to fetch room occupancy data",
-
       details:
         process.env.NODE_ENV === "development" ? error.message : undefined,
     });
@@ -3942,3 +4018,5 @@ router.get("/room-occupancy", async (req, res) => {
 });
 
 module.exports = router;
+
+

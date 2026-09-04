@@ -185,6 +185,110 @@ routes.get('/stored-videos', async (req, res) => {
     }
 });
 
+// GET /admin/properties/activities - Fetch all activities from database
+routes.get('/activities', async (req, res) => {
+    let connection;
+    try {
+        connection = await createConnection();
+        await ensureExtendedSchema(connection);
+
+        const activitiesMap = new Map();
+
+        // 1. Check if a standalone activities table exists
+        try {
+            const [tableCheck] = await connection.query(
+                `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'activities'`
+            );
+            if (tableCheck.length > 0) {
+                const [actRows] = await connection.query('SELECT * FROM activities');
+                for (const row of actRows) {
+                    const id = String(row.id || row.activity_id || `db_act_${activitiesMap.size + 1}`);
+                    const title = row.title || row.name || row.service_name || `Activity ${activitiesMap.size + 1}`;
+                    activitiesMap.set(title.toLowerCase().trim(), {
+                        id,
+                        title,
+                        description: row.description || '',
+                        price: Number(row.price || row.cost || row.rate) || 0,
+                    });
+                }
+            }
+        } catch (_) {}
+
+        // 2. Fetch all activities saved in accommodations table
+        const [rows] = await connection.execute(
+            'SELECT id, name, activities FROM accommodations WHERE activities IS NOT NULL AND activities != ""'
+        );
+
+        for (const row of rows) {
+            const acts = parseJSONField(row.activities, []);
+            if (Array.isArray(acts)) {
+                for (const act of acts) {
+                    if (act && (act.title || act.name)) {
+                        const title = (act.title || act.name).trim();
+                        const key = title.toLowerCase();
+                        if (!activitiesMap.has(key) || (!activitiesMap.get(key).price && act.price)) {
+                            activitiesMap.set(key, {
+                                id: String(act.id || `act_${activitiesMap.size + 1}`),
+                                title,
+                                description: act.description || '',
+                                price: Number(act.price) || 0,
+                                accommodationId: row.id,
+                                accommodationName: row.name,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        const activitiesList = Array.from(activitiesMap.values());
+
+        res.json({
+            success: true,
+            data: activitiesList,
+            count: activitiesList.length,
+        });
+    } catch (error) {
+        console.error('Error fetching activities from database:', error);
+        res.status(500).json({ error: 'Failed to fetch activities', details: error.message });
+    } finally {
+        await closeConnection(connection);
+    }
+});
+
+// GET /admin/properties/accommodations/:id/activities - Fetch specific accommodation activities from database
+routes.get('/accommodations/:id/activities', async (req, res) => {
+    const { id } = req.params;
+    let connection;
+    try {
+        connection = await createConnection();
+        await ensureExtendedSchema(connection);
+
+        const [rows] = await connection.execute(
+            'SELECT id, name, activities FROM accommodations WHERE id = ?',
+            [id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Accommodation not found' });
+        }
+
+        const activities = parseJSONField(rows[0].activities, []);
+        res.json({
+            success: true,
+            accommodationId: rows[0].id,
+            accommodationName: rows[0].name,
+            data: Array.isArray(activities) ? activities : [],
+        });
+    } catch (error) {
+        console.error('Error fetching accommodation activities from database:', error);
+        res.status(500).json({ error: 'Failed to fetch accommodation activities', details: error.message });
+    } finally {
+        await closeConnection(connection);
+    }
+});
+
 const createConnection = async () => {
     return await pool.getConnection();
 };
@@ -206,6 +310,8 @@ const EXTENDED_COLUMNS = [
     ['rules_and_policies', 'LONGTEXT NULL'],
     ['faqs', 'LONGTEXT NULL'],
     ['guest_stories', 'LONGTEXT NULL'],
+    ['max_adults', 'INT NULL DEFAULT 2'],
+    ['max_children', 'INT NULL DEFAULT 0'],
 ];
 
 let schemaReadyPromise = null;
@@ -275,6 +381,8 @@ const toJson = (value, fallback) => {
 };
 
 const extractExtendedFields = (basicInfo = {}, current = {}, reqBody = {}) => ({
+    maxAdults: basicInfo.maxAdults ?? reqBody.maxAdults ?? reqBody.packages?.pricing?.maxAdults ?? current.max_adults ?? null,
+    maxChildren: basicInfo.maxChildren ?? reqBody.maxChildren ?? reqBody.packages?.pricing?.maxChildren ?? current.max_children ?? null,
     metaTitle: basicInfo.metaTitle ?? reqBody.metaTitle ?? current.meta_title ?? null,
     metaDescription: basicInfo.metaDescription ?? reqBody.metaDescription ?? current.meta_description ?? null,
     pageHeading: basicInfo.pageHeading ?? reqBody.pageHeading ?? current.page_heading ?? null,
@@ -314,6 +422,8 @@ const formatListItem = (row) => ({
     description: row.description,
     price: row.price,
     capacity: row.capacity,
+    maxAdults: row.max_adults !== null && row.max_adults !== undefined ? Number(row.max_adults) : (row.capacity || 2),
+    maxChildren: row.max_children !== null && row.max_children !== undefined ? Number(row.max_children) : Math.max(0, (row.max_guests || row.capacity || 2) - (row.capacity || 2)),
     rooms: row.rooms,
     available: Boolean(row.available),
     features: parseJSONField(row.features, []),
@@ -340,6 +450,8 @@ const formatListItem = (row) => ({
             adult: row.adult_price,
             child: row.child_price,
             maxGuests: row.max_guests,
+            maxAdults: row.max_adults !== null && row.max_adults !== undefined ? Number(row.max_adults) : (row.capacity || 2),
+            maxChildren: row.max_children !== null && row.max_children !== undefined ? Number(row.max_children) : Math.max(0, (row.max_guests || row.capacity || 2) - (row.capacity || 2)),
         },
     },
     metaTitle: row.meta_title,
@@ -367,6 +479,8 @@ const formatDetail = (accommodation) => ({
         description: accommodation.description || '',
         type: accommodation.type || '',
         capacity: accommodation.capacity || 2,
+        maxAdults: accommodation.max_adults !== null && accommodation.max_adults !== undefined ? Number(accommodation.max_adults) : (accommodation.capacity || 2),
+        maxChildren: accommodation.max_children !== null && accommodation.max_children !== undefined ? Number(accommodation.max_children) : Math.max(0, (accommodation.max_guests || accommodation.capacity || 2) - (accommodation.capacity || 2)),
         rooms: accommodation.rooms || 1,
         price: accommodation.price || 0,
         available: Boolean(accommodation.available),
@@ -415,6 +529,8 @@ const formatDetail = (accommodation) => ({
             adult: accommodation.adult_price || 0,
             child: accommodation.child_price || 0,
             maxGuests: accommodation.max_guests || 2,
+            maxAdults: accommodation.max_adults !== null && accommodation.max_adults !== undefined ? Number(accommodation.max_adults) : (accommodation.capacity || 2),
+            maxChildren: accommodation.max_children !== null && accommodation.max_children !== undefined ? Number(accommodation.max_children) : Math.max(0, (accommodation.max_guests || accommodation.capacity || 2) - (accommodation.capacity || 2)),
         },
     },
     metadata: {
@@ -483,7 +599,8 @@ routes.get('/accommodations', async (req, res) => {
                 package_images, adult_price, child_price, max_guests,
                 created_at, updated_at, MaxPersonVilla, RatePerPerson, meal_plans,
                 meta_title, meta_description, page_heading, room_numbers, activities,
-                meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories
+                meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories,
+                max_adults, max_children
             FROM accommodations
         `;
 
@@ -705,18 +822,22 @@ routes.post('/accommodations', async (req, res) => {
         const packageName = packages?.name || null;
         const packageDescription = packages?.description || null;
         const packageImages = packages?.images || [];
-        const adultPrice = packages?.pricing?.adult || 0;
-        const childPrice = packages?.pricing?.child || 0;
-        const maxGuests = packages?.pricing?.maxGuests || 2;
+        const adultPrice = packages?.pricing?.adult ?? basicInfo?.adultPrice ?? basicInfo?.RatePersonVilla ?? 0;
+        const childPrice = packages?.pricing?.child ?? basicInfo?.childPrice ?? 0;
+        const maxAdults = extended.maxAdults ?? basicInfo?.maxAdults ?? packages?.pricing?.maxAdults ?? capacity ?? 2;
+        const maxChildren = extended.maxChildren ?? basicInfo?.maxChildren ?? packages?.pricing?.maxChildren ?? 0;
+        const maxGuests = packages?.pricing?.maxGuests ?? basicInfo?.maxGuests ?? (Number(maxAdults) + Number(maxChildren)) ?? basicInfo?.MaxPersonVilla ?? capacity ?? 2;
+        const finalMaxPersonVilla = MaxPersonVilla || basicInfo?.maxGuests || maxGuests || null;
+        const finalRatePersonVilla = RatePersonVilla || basicInfo?.adultPrice || adultPrice || null;
 
         const [result] = await connection.execute(
             `INSERT INTO accommodations
             (name, description, type, capacity, rooms, price, features, images, available, owner_id, city_id,
              address, latitude, longitude, amenity_ids, package_name, package_description, package_images,
-             adult_price, child_price, max_guests, MaxPersonVilla, RatePerPerson, meal_plans,
+             adult_price, child_price, max_guests, max_adults, max_children, MaxPersonVilla, RatePerPerson, meal_plans,
              meta_title, meta_description, page_heading, image_details, room_numbers, activities,
              meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 name,
                 description || null,
@@ -739,8 +860,10 @@ routes.post('/accommodations', async (req, res) => {
                 adultPrice,
                 childPrice,
                 maxGuests,
-                MaxPersonVilla || null,
-                RatePersonVilla || null,
+                maxAdults,
+                maxChildren,
+                finalMaxPersonVilla,
+                finalRatePersonVilla,
                 JSON.stringify(mealPlans),
                 extended.metaTitle,
                 extended.metaDescription,
@@ -824,9 +947,13 @@ routes.put('/accommodations/:id', async (req, res) => {
 
         const packageName = packages.name ?? current.package_name;
         const packageDescription = packages.description ?? current.package_description;
-        const adultPrice = packages.pricing?.adult ?? current.adult_price;
-        const childPrice = packages.pricing?.child ?? current.child_price;
-        const maxGuests = packages.pricing?.maxGuests ?? current.max_guests;
+        const adultPrice = packages.pricing?.adult ?? basicInfo.adultPrice ?? basicInfo.RatePersonVilla ?? current.adult_price ?? 0;
+        const childPrice = packages.pricing?.child ?? basicInfo.childPrice ?? current.child_price ?? 0;
+        const maxAdults = basicInfo.maxAdults ?? packages.pricing?.maxAdults ?? extended.maxAdults ?? current.max_adults ?? capacity ?? 2;
+        const maxChildren = basicInfo.maxChildren ?? packages.pricing?.maxChildren ?? extended.maxChildren ?? current.max_children ?? 0;
+        const maxGuests = packages.pricing?.maxGuests ?? basicInfo.maxGuests ?? (Number(maxAdults) + Number(maxChildren)) ?? basicInfo.MaxPersonVilla ?? current.max_guests ?? capacity ?? 2;
+        const finalMaxPersonVilla = MaxPersonVilla ?? basicInfo.maxGuests ?? maxGuests ?? current.MaxPersonVilla;
+        const finalRatePersonVilla = RatePerPerson ?? basicInfo.RatePersonVilla ?? basicInfo.extraPersonRate ?? basicInfo.adultPrice ?? adultPrice ?? current.RatePerPerson;
         const finalOwnerId = ownerId ?? current.owner_id;
 
         let finalAvailable;
@@ -858,6 +985,7 @@ routes.put('/accommodations/:id', async (req, res) => {
                 city_id = ?, address = ?, latitude = ?, longitude = ?, amenity_ids = ?,
                 package_name = ?, package_description = ?, package_images = ?,
                 adult_price = ?, child_price = ?, max_guests = ?,
+                max_adults = ?, max_children = ?,
                 MaxPersonVilla = ?, RatePerPerson = ?, meal_plans = ?,
                 meta_title = ?, meta_description = ?, page_heading = ?,
                 image_details = ?, room_numbers = ?, activities = ?,
@@ -871,7 +999,8 @@ routes.put('/accommodations/:id', async (req, res) => {
                 cityId, address, latitude, longitude, finalAmenityIds,
                 packageName, packageDescription, finalPackageImages,
                 Number(adultPrice), Number(childPrice), Number(maxGuests),
-                MaxPersonVilla, RatePerPerson, mealPlans,
+                Number(maxAdults), Number(maxChildren),
+                finalMaxPersonVilla, finalRatePersonVilla, mealPlans,
                 extended.metaTitle, extended.metaDescription, extended.pageHeading,
                 extended.imageDetails, extended.roomNumbers, extended.activities,
                 extended.mealDetails, extended.howToReach, extended.nearbyPlaces,

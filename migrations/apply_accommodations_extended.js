@@ -22,6 +22,8 @@ require('dotenv').config();
     ['rules_and_policies', 'LONGTEXT NULL'],
     ['faqs', 'LONGTEXT NULL'],
     ['guest_stories', 'LONGTEXT NULL'],
+    ['max_adults', 'INT NULL DEFAULT 2'],
+    ['max_children', 'INT NULL DEFAULT 0'],
   ];
 
   const [existing] = await conn.query(
