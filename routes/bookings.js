@@ -3920,38 +3920,39 @@ router.post("/send-whatsapp-invoice", async (req, res) => {
 
     const whatsappToken =
       process.env.WHATSAPP_API_TOKEN ||
-      "EAAuMzfui4XIBSYfTZCS69rFaFP959CQPP62DnYTWCmwyRpYiH4dEiAkVKxD4KeFn90NqtTYYBSbK936gwNSKVO2IEOCZCgXH5Oi1E2LV2fW9C8ADhWXzzcqyMvmP9VXkOVnBhrqwOhFyPDg12lrOodOEfZCexptrli2kTzb0OuiN5ZBlZB0DUtCizk35Onhw7eEAYuRqSHC03h1ZCfTZBMWIhznlJJWel87R1W56LZBaAuTmaFZAuqMsIpMKXINKlOxsZCZCAsZCGq43TWsZD";
+      "EAAORWaKV1OgBSTitPXxaY9aFZBSZAKHHOB5q1rmZCuWeEZAqYWZBEPCef8tOrptU2m9sox1IXBGJ0cDb9UZCkMKklWls08NkWl1sIelF1LpTkXaZAU2jtEZC2x5P0klo0v3R1rCW3OZBDGZBHy5wVPHONHgXs6xDlojFQpY1PE16iIC4r36gkUU15OZC1DGY29FRnuipqG5cwpcZBIZBbVPot2pxu1DZASaReeZA6MctbMPESPTTvkTTrzLcHFYSs0avJZBgqKusBfm5kT0pHkT7bNAVHy2F";
     const phoneNumberId =
       process.env.WHATSAPP_PHONE_NUMBER_ID ||
-      req.body.phone_number_id;
+      req.body.phone_number_id ||
+      "1328211520368254";
 
     let metaApiResponse = null;
 
     // If WhatsApp Cloud API / Meta Graph API credentials are configured
     if (whatsappToken && phoneNumberId) {
       try {
-        const axios = require("axios");
-        const metaRes = await axios.post(
-          `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+        const metaRes = await fetch(
+          `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`,
           {
-            messaging_product: "whatsapp",
-            recipient_type: "individual",
-            to: formattedPhone,
-            type: "text",
-            text: { preview_url: true, body: invoice_message }
-          },
-          {
+            method: "POST",
             headers: {
               Authorization: `Bearer ${whatsappToken}`,
               "Content-Type": "application/json"
-            }
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              recipient_type: "individual",
+              to: formattedPhone,
+              type: "text",
+              text: { preview_url: true, body: invoice_message }
+            })
           }
         );
-        metaApiResponse = metaRes.data;
-        console.log(`[Meta Cloud API] Message dispatched successfully:`, metaApiResponse);
+        metaApiResponse = await metaRes.json();
+        console.log(`[Meta Cloud API] Message dispatched to +${formattedPhone}:`, metaApiResponse);
       } catch (metaErr) {
-        console.error("Meta WhatsApp Cloud API error:", metaErr?.response?.data || metaErr.message);
-        metaApiResponse = { error: metaErr?.response?.data || metaErr.message };
+        console.error("Meta WhatsApp Cloud API error:", metaErr.message);
+        metaApiResponse = { error: metaErr.message };
       }
     }
 
