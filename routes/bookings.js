@@ -52,10 +52,29 @@ const bookingCleanup = () => {
   }, 30 * 60 * 1000); // every 30 minutes
 };
 
-bookingCleanup();
+// Ensure meal_plan and meal_plan_price columns exist in bookings table
+const ensureBookingsMealPlanSchema = async () => {
+  try {
+    const [existing] = await pool.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bookings'`
+    );
+    const names = new Set(existing.map((row) => (row.COLUMN_NAME || '').toLowerCase()));
+    if (!names.has('meal_plan')) {
+      await pool.query("ALTER TABLE bookings ADD COLUMN meal_plan VARCHAR(50) NULL DEFAULT 'EP'");
+      console.log("[bookings] added column meal_plan");
+    }
+    if (!names.has('meal_plan_price')) {
+      await pool.query("ALTER TABLE bookings ADD COLUMN meal_plan_price DECIMAL(10,2) NULL DEFAULT 0.00");
+      console.log("[bookings] added column meal_plan_price");
+    }
+  } catch (err) {
+    console.warn("Bookings schema check warning (non-fatal):", err.message);
+  }
+};
+ensureBookingsMealPlanSchema();
 
 // GET /admin/bookings - fetch all bookings
-
 router.get("/", async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
@@ -97,17 +116,11 @@ router.get("/", async (req, res) => {
 
         b.total_amount,
 
-        b.advance_amount,
-
         b.payment_status,
-
         b.payment_txn_id,
-
-        b.created_at
-
-
-
-
+        b.created_at,
+        b.meal_plan,
+        b.meal_plan_price
       FROM bookings b
 
       LEFT JOIN accommodations a ON b.accommodation_id = a.id
@@ -3677,13 +3690,9 @@ router.get("/details/:txnid", async (req, res) => {
 
     const [bookings] = await pool.execute(
       `SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, food_veg, food_nonveg,
-
-              food_jain, check_in, check_out, total_amount, advance_amount, accommodation_id , coupon_code ,discount_amount ,full_amount 
-
+              food_jain, check_in, check_out, total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount, meal_plan, meal_plan_price
        FROM bookings 
-
        WHERE payment_txn_id = ?`,
-
       [txnid]
     );
 
@@ -3872,6 +3881,11 @@ const handleBookingUpdate = async (req, res) => {
     if (meal_plan !== undefined) {
       try {
         await pool.execute("UPDATE bookings SET meal_plan = ? WHERE id = ?", [meal_plan, id]);
+      } catch (_) {}
+    }
+    if (req.body.meal_plan_price !== undefined) {
+      try {
+        await pool.execute("UPDATE bookings SET meal_plan_price = ? WHERE id = ?", [parseFloat(req.body.meal_plan_price) || 0, id]);
       } catch (_) {}
     }
     if (special_requests !== undefined) {

@@ -312,6 +312,7 @@ const EXTENDED_COLUMNS = [
     ['guest_stories', 'LONGTEXT NULL'],
     ['max_adults', 'INT NULL DEFAULT 2'],
     ['max_children', 'INT NULL DEFAULT 0'],
+    ['meal_plans', 'LONGTEXT NULL'],
 ];
 
 let schemaReadyPromise = null;
