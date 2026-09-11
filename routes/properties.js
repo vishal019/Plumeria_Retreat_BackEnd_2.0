@@ -112,7 +112,7 @@ routes.get('/stored-videos', async (req, res) => {
                                 caption: '',
                                 source: 'storage',
                             });
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                 }
             } catch (fsErr) {
@@ -213,7 +213,7 @@ routes.get('/activities', async (req, res) => {
                     });
                 }
             }
-        } catch (_) {}
+        } catch (_) { }
 
         // 2. Fetch all activities saved in accommodations table
         const [rows] = await connection.execute(
@@ -354,7 +354,7 @@ const parseJSONField = (field, defaultValue) => {
         if (typeof parsed === 'string') {
             try {
                 parsed = JSON.parse(parsed);
-            } catch (_) {}
+            } catch (_) { }
         }
         return parsed;
     } catch (e) {

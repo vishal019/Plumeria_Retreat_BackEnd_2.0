@@ -6,7 +6,7 @@ const pool = require("../dbcon");
 
 const crypto = require("crypto");
 
-const PayU = require("payu-websdk");
+const { razorpayInstance, razorpayKeyId, razorpayKeySecret } = require("./razorpay.config");
 
 const nodemailer = require("nodemailer");
 
@@ -18,17 +18,9 @@ const { v4: uuidv4 } = require("uuid");
 
 require("dotenv").config();
 
-const payu_key = process.env.PAYU_MERCHANT_KEY ||"rFrruE9E"; //process.env.PAYU_MERCHANT_KEY;
+const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || "https://plumeriaretreat.vercel.app";
 
-const payu_salt = process.env.PAYU_MERCHANT_SALT||"DvYeVsKfYU";
-
-// "MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCS2TYPoivPA9qOZW+c+evpYJGF9I6Ti/FVL3+3AyEImmWr9kd8NXRnWkRw79JmzJ+wUL1HkuloTCEvOcnoN16sd2bQ3n4j2WRca0QkHbx4JougH3NKfUkVIo2n21xlaxu9xiIjMZF1OQbNhMJfid/vP7FSaUhLdN46aWvyjxohK30IRvGnXbOH3666UtJXDSvebtrClLfUdX/9zOXLUU45vncGyCtylNiADLW5dMR5EkB8vQwpFXbQ+79LG9RRSDD8yCIJbd8Z4EB5gt1rQwdiUeV2T45ncSETFNKudUtwt/SxffzQPH5qDiyU2D35Cc5lUQQmELjK9aLYI/ge6ss1AgMBAAECggEAFxolc2GttzBxxIeoPr+hsdIvqq2N9Z/lPGPP2ZScMIyLtLk2x09oi+7rSAIurV4BPF2DXZx67F3XtaSHg2kck5DoQ7FREmY7r/9vFah480ULH8p62ovpwLGyK+dqeokWcO1YBwXgDptFWvVJF/sql+rDBIZMKZTN9k4J/buuHmwKQEqOowUBQWP1oo0Sgrnv48nQqlPfGatxq7U4w4hRLf3l6UR0c/mPHVb00UabBaZzZ9B/jMMasHDtLKYQ/69VtCo2QVm9Kykh3bRHKjiAF5f606gHiewILi3jj+lcnUrcDL1pFkBqskrJ8NibHfdJkaT1w3W1n463cLfCCntD2QKBgQC67h1lGo3avoB4GdoGMzqsDg9Bub0FpI2/lnL5oeFgygRvYRBb78E3fUKuYIWcUjiZaTgukIsMtZKPEpv90tJXua5dQEOOip9D4SQddHoT7MNToFFKJ5pXzHonc8dSMQYLV3LeR1V/9inJhrRPjedhr1jdJBMLZIAOe/mZBDh8CQKBgQDJG7zPL0sua6WkX6lLX0JydmEjbOFedeL2olY3pm8Vj0iC1ejUzsYrRwHEc1YUr2bO0NQ0uQ64dLhl+AXu2HwCWu7aRKMas0lg4uFemcmerqUMd1ozJJfI3fhjfSaFXwSqn5LcclUCXt/LOx49cxN9HmPHYNpyvV+P17gchIG4zQKBgCL95+rBKcTE3G+fBz0Z4eXLS/fVuRiRUSeIFkW8k9/2cRYYaWOMYfLtM8pIrzov+gBdvfKZhC4A30qBBUpiaJWbYJR8LylDscSXJJeO8jtAmt/QpubmuvGsiUFRXwJ3wtXkrNAHMm4dunzLBn3N5n5WwJ/E3PvI+F+9vV9zds9hAoGAdz5eHo8RSe4EIkmibRGHqaztff7SRpspv0mUS50A4sy5lvJVAtG0CPcqYhxtHwi9scV6/eP4iYCT0cpVYkC0jwTx+TOXbn599Nex/9C6Dr/JF3IxZn+9DBopbHxJee1ULANAJjwYkbZFhhCAprj0Bk0dppuUC1KkNfsXrLkY3cUCgYAYdRxY9KFg97jhRyD25LKTHbLyp5+rd53UxxNM5GGaxwHCe0FPj9jTD9x6NoGIg1cLDeaTIy20a4cDJx5v50yrMFvnbIMCcQ4nm71GfXUtO53O/k4ptTk9jVlM8ymJ/kK0956OODrrCTz/4Sur4+11gkd1LAw+MfKHZ8gtWrswPQ=="; //process.env.PAYU_MERCHANT_SALT;
-
-const PAYU_BASE_URL =process.env.PAYU_BASE_URL ||'https://secure.payu.in';
-
-const FRONTEND_BASE_URL =process.env.FRONTEND_BASE_URL || "https://plumeriaretreat.vercel.app";
-
-const ADMIN_BASE_URL =process.env.ADMIN_BASE_URL || "https://a.plumeriaretreat.com";
+const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || "https://a.plumeriaretreat.com";
 
 // BOOKING CLEANUP JOB
 
@@ -197,7 +189,7 @@ router.post("/", async (req, res) => {
       RatePersonVilla,
       ExtraPersonVilla,
       type,
-      payment_method = "payu",
+      payment_method = "razorpay",
       meal_plan = null,
       meal_plan_price = 0,
     } = req.body;
@@ -840,90 +832,297 @@ router.delete('/delete/:id', async (req, res) => {
   }
 });
 
-router.post("/payments/payu", async (req, res) => {
+// POST /admin/bookings/payments/razorpay/create-order
+// POST /admin/bookings/payments/razorpay
+router.post(["/payments/razorpay/create-order", "/payments/razorpay", "/payments/payu"], async (req, res) => {
   try {
     const { amount, firstname, email, phone, booking_id, productinfo } = req.body;
 
     // --- Validation ---
-    if (!amount || !firstname || !email || !booking_id || !productinfo) {
-      return res.status(400).json({ success: false, error: "Missing required payment parameters" });
+    if (!amount || !booking_id) {
+      return res.status(400).json({ success: false, error: "Missing required payment parameters: amount or booking_id" });
     }
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      return res.status(400).json({ success: false, error: "Invalid amount" });
-    }
-    const formattedAmount = numericAmount.toFixed(2); // PayU requires "100.00"
-
-    const cleanPhone = phone ? phone.toString().replace(/\D/g, "") : "";
-    if (cleanPhone.length < 10) {
-      return res.status(400).json({ success: false, error: "Valid 10-digit phone required" });
+      return res.status(400).json({ success: false, error: "Invalid payment amount" });
     }
 
-    // --- Check booking ---
+    // --- Check pending booking ---
     const [booking] = await pool.execute(
-      'SELECT id FROM bookings WHERE id = ? AND payment_status = "pending"',
+      'SELECT id, total_amount, advance_amount, guest_name, guest_email, guest_phone FROM bookings WHERE id = ? AND payment_status = "pending"',
       [booking_id]
     );
+
     if (booking.length === 0) {
-      return res.status(404).json({ success: false, error: "Pending booking not found" });
+      return res.status(404).json({ success: false, error: "Pending booking not found or already processed" });
     }
 
-    // --- Generate txnid ---
-    const txnid = `PAYU-${uuidv4()}`;
+    // Razorpay requires amount in smallest currency sub-unit (paise for INR, 1 INR = 100 paise)
+    const amountInPaise = Math.round(numericAmount * 100);
 
-    // --- UDF fields (all required in live) ---
-    const udf1 = "", udf2 = "", udf3 = "", udf4 = "", udf5 = "";
-    const udf6 = "", udf7 = "", udf8 = "", udf9 = "", udf10 = "";
+    const receiptId = `rcpt_${booking_id}_${Date.now()}`.substring(0, 40);
 
-    // --- Truncate fields ---
-    const truncatedProductinfo = productinfo.substring(0, 100);
-    const truncatedFirstname = firstname.substring(0, 60);
-    const truncatedEmail = email.substring(0, 50);
-
-    // --- Hash string (include all UDFs) ---
-    const hashString =
-      `${payu_key}|${txnid}|${formattedAmount}|${truncatedProductinfo}|${truncatedFirstname}|${truncatedEmail}|` +
-      `${udf1}|${udf2}|${udf3}|${udf4}|${udf5}|${udf6}|${udf7}|${udf8}|${udf9}|${udf10}|${payu_salt}`;
-
-    const hash = crypto.createHash("sha512").update(hashString).digest("hex");
-
-    console.log("📑 PayU Hash String:", hashString);
-    console.log("🔐 Generated Hash:", hash);
-
-    // --- Save txnid ---
-    await pool.execute(
-      'UPDATE bookings SET payment_txn_id = ?, payment_status = "pending" WHERE id = ?',
-      [txnid, booking_id]
-    );
-
-    // --- Payment payload ---
-    const paymentData = {
-      key: payu_key,
-      txnid,
-      amount: formattedAmount,
-      productinfo: truncatedProductinfo,
-      firstname: truncatedFirstname,
-      email: truncatedEmail,
-      phone: cleanPhone.substring(0, 10),
-      surl: `${ADMIN_BASE_URL}/admin/bookings/success/verify/${txnid}`, // ✅ backend route
-      furl: `${ADMIN_BASE_URL}/admin/bookings/failed/verify/${txnid}`,  // ✅ backend route
-      hash,
+    const orderOptions = {
+      amount: amountInPaise,
       currency: "INR",
-      udf1, udf2, udf3, udf4, udf5, udf6, udf7, udf8, udf9, udf10
+      receipt: receiptId,
+      notes: {
+        booking_id: String(booking_id),
+        guest_name: firstname || booking[0].guest_name || "",
+        guest_email: email || booking[0].guest_email || "",
+        productinfo: productinfo || `Booking #${booking_id}`
+      }
     };
 
-    // --- Respond to frontend ---
+    console.log("💳 Creating Razorpay Order:", orderOptions);
+    const order = await razorpayInstance.orders.create(orderOptions);
+    console.log("✅ Razorpay Order Created:", order.id);
+
+    // Update booking with Razorpay Order ID as pending payment_txn_id
+    await pool.execute(
+      'UPDATE bookings SET payment_txn_id = ?, payment_status = "pending" WHERE id = ?',
+      [order.id, booking_id]
+    );
+
+    // Respond to frontend
     res.json({
       success: true,
-      message: "Payment initiated",
-      payu_url: `${PAYU_BASE_URL}/_payment`, // test: https://test.payu.in/_payment | live: https://secure.payu.in/_payment
-      payment_data: paymentData,
+      message: "Razorpay order initiated",
+      key_id: razorpayKeyId,
+      order: order,
+      booking_id: booking_id,
+      amount: numericAmount,
+      currency: "INR"
     });
 
   } catch (error) {
-    console.error("💥 PayU initiation error:", error);
-    res.status(500).json({ success: false, error: "Payment initiation failed" });
+    console.error("💥 Razorpay order initiation error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to initiate Razorpay order",
+      details: error.message || error
+    });
+  }
+});
+
+// POST /admin/bookings/payments/razorpay/verify
+router.post("/payments/razorpay/verify", async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, booking_id } = req.body;
+
+    console.log("🔐 Verifying Razorpay Payment:", {
+      razorpay_order_id,
+      razorpay_payment_id,
+      booking_id
+    });
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required Razorpay verification fields"
+      });
+    }
+
+    // Verify HMAC-SHA256 signature
+    const signatureBody = `${razorpay_order_id}|${razorpay_payment_id}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", razorpayKeySecret)
+      .update(signatureBody.toString())
+      .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+      console.error("❌ Razorpay signature mismatch! Possible tampering.");
+      if (booking_id) {
+        await pool.execute('UPDATE bookings SET payment_status = "failed" WHERE id = ?', [booking_id]);
+      }
+      return res.status(400).json({
+        success: false,
+        error: "Razorpay payment verification failed: signature mismatch"
+      });
+    }
+
+    console.log("✅ Razorpay Signature Verified Successfully!");
+
+    // Update booking in database
+    const newStatus = "success";
+    let targetBookingId = booking_id;
+
+    if (targetBookingId) {
+      await pool.execute(
+        "UPDATE bookings SET payment_status = ?, payment_txn_id = ? WHERE id = ?",
+        [newStatus, razorpay_payment_id, targetBookingId]
+      );
+    } else {
+      await pool.execute(
+        "UPDATE bookings SET payment_status = ?, payment_txn_id = ? WHERE payment_txn_id = ?",
+        [newStatus, razorpay_payment_id, razorpay_order_id]
+      );
+    }
+
+    // Fetch booking details for confirmation & PDF email
+    const [bookings] = await pool.execute(`
+      SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, 
+             food_veg, food_nonveg, food_jain, check_in, check_out, 
+             total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount
+      FROM bookings 
+      WHERE payment_txn_id = ? OR id = ?`,
+      [razorpay_payment_id, targetBookingId || -1]
+    );
+
+    if (bookings && bookings.length > 0) {
+      const bk = bookings[0];
+      const remainingAmount = parseFloat(bk.total_amount || 0) - parseFloat(bk.advance_amount || 0);
+
+      const formatDate = (dateValue) => {
+        if (!dateValue) return "Invalid date";
+        try {
+          const date = new Date(dateValue);
+          if (isNaN(date.getTime())) throw new Error("Invalid date");
+          return format(date, "dd/MM/yyyy");
+        } catch (e) {
+          return "Invalid date";
+        }
+      };
+
+      const today = new Date();
+      const formattedDate = format(today, "yyyy-MM-dd");
+      const recipientEmail = bk.guest_email?.trim();
+
+      const [accommodations] = await pool.execute(
+        "SELECT name, address, latitude, longitude, owner_id, type FROM accommodations WHERE id = ?",
+        [bk.accommodation_id]
+      );
+
+      const acc = accommodations[0] || {};
+      const owner_id = acc.owner_id;
+
+      let ownerName = "", ownerEmail = "", ownerPhone = "";
+      if (owner_id) {
+        const [user] = await pool.execute(
+          "SELECT name, email, phoneNumber FROM users WHERE id = ?",
+          [owner_id]
+        );
+        if (user && user.length > 0) {
+          ownerName = user[0].name || "";
+          ownerEmail = user[0].email || "";
+          ownerPhone = user[0].phoneNumber || "";
+        }
+      }
+
+      console.log("🚀 Sending confirmation email for booking:", bk.id);
+      try {
+        await sendPdfEmail({
+          email: recipientEmail,
+          name: bk.guest_name,
+          BookingId: bk.id,
+          BookingDate: formattedDate,
+          CheckinDate: formatDate(bk.check_in),
+          CheckoutDate: formatDate(bk.check_out),
+          totalPrice: bk.total_amount,
+          advancePayable: bk.advance_amount,
+          remainingAmount: remainingAmount.toFixed(2),
+          mobile: bk.guest_phone,
+          totalPerson: (Number(bk.adults) || 1) + (Number(bk.children) || 0),
+          adult: bk.adults,
+          child: bk.children,
+          vegCount: bk.food_veg,
+          nonvegCount: bk.food_nonveg,
+          joinCount: bk.food_jain,
+          accommodationName: acc.name || "",
+          accommodationAddress: acc.address || "",
+          latitude: acc.latitude || "",
+          longitude: acc.longitude || "",
+          ownerEmail: ownerEmail || "",
+          ownerName: ownerName || "",
+          ownerPhone: ownerPhone || "",
+          coupon: bk.coupon_code || "N/A",
+          discount: bk.discount_amount || "0",
+          full_amount: bk.full_amount || "0",
+          acc_type: (acc.type || "camping").toLowerCase(),
+          rooms: bk.rooms || 1,
+        });
+        console.log("✅ Confirmation email sent to:", recipientEmail);
+      } catch (mailErr) {
+        console.error("❌ Email sending failed:", mailErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Payment verified successfully",
+      payment_id: razorpay_payment_id,
+      order_id: razorpay_order_id,
+      booking_id: targetBookingId || (bookings[0] ? bookings[0].id : null)
+    });
+
+  } catch (error) {
+    console.error("💥 Razorpay verification error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Payment verification failed",
+      details: error.message
+    });
+  }
+});
+
+// GET & POST /admin/bookings/:id/retry-payment - Retry payment for an existing booking
+router.all("/:id/retry-payment", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [bookings] = await pool.execute(
+      "SELECT b.*, a.name AS accommodation_name FROM bookings b LEFT JOIN accommodations a ON b.accommodation_id = a.id WHERE b.id = ?",
+      [id]
+    );
+
+    if (bookings.length === 0) {
+      return res.status(404).json({ success: false, error: "Booking not found" });
+    }
+
+    const booking = bookings[0];
+    if (booking.payment_status === "success" || booking.payment_status === "paid") {
+      return res.status(400).json({ success: false, error: "Booking is already paid" });
+    }
+
+    const amount = parseFloat(booking.advance_amount || booking.total_amount || 0);
+    if (amount <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid booking amount" });
+    }
+
+    const amountInPaise = Math.round(amount * 100);
+    const receiptId = `retry_${id}_${Date.now()}`.substring(0, 40);
+
+    const order = await razorpayInstance.orders.create({
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: receiptId,
+      notes: {
+        booking_id: String(id),
+        guest_name: booking.guest_name || "",
+        guest_email: booking.guest_email || "",
+        productinfo: `Retry Booking #${id}`
+      }
+    });
+
+    await pool.execute(
+      'UPDATE bookings SET payment_txn_id = ?, payment_status = "pending" WHERE id = ?',
+      [order.id, id]
+    );
+
+    res.json({
+      success: true,
+      key_id: razorpayKeyId,
+      order: order,
+      booking_id: id,
+      guest_name: booking.guest_name,
+      guest_email: booking.guest_email,
+      guest_phone: booking.guest_phone,
+      accommodation_name: booking.accommodation_name,
+      amount: amount
+    });
+  } catch (error) {
+    console.error("Error creating retry payment order:", error);
+    res.status(500).json({ success: false, error: "Failed to initiate retry payment", details: error.message });
   }
 });
 
@@ -3686,14 +3885,14 @@ router.get("/details/:txnid", async (req, res) => {
   const { txnid } = req.params;
 
   try {
-    // Step 1: Fetch booking by txnid
-
+    // Step 1: Fetch booking by txnid or id
+    const numericId = isNaN(Number(txnid)) ? -1 : Number(txnid);
     const [bookings] = await pool.execute(
       `SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, food_veg, food_nonveg,
               food_jain, check_in, check_out, total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount, meal_plan, meal_plan_price
        FROM bookings 
-       WHERE payment_txn_id = ?`,
-      [txnid]
+       WHERE payment_txn_id = ? OR id = ?`,
+      [txnid, numericId]
     );
 
     if (bookings.length === 0) {
@@ -3993,7 +4192,7 @@ router.post("/send-whatsapp-invoice", async (req, res) => {
 router.put(["/:id", "/edit/:id", "/update/:id"], handleBookingUpdate);
 router.post(["/:id", "/edit/:id", "/update/:id"], handleBookingUpdate);
 
-// GET /admin/bookings/room-occupancy - Get total rooms booked for a specific date
+// GET /admin/bookings/room-occupancy - Get total rooms booked for a specific date (Only confirmed/paid bookings allocate rooms)
 router.get("/room-occupancy", async (req, res) => {
   try {
     const { check_in, id } = req.query;
@@ -4005,10 +4204,11 @@ router.get("/room-occupancy", async (req, res) => {
       });
     }
 
+    // Do NOT allocate rooms if payment is pending, failed, expired, or cancelled
     const [result] = await pool.execute(
       `SELECT COALESCE(SUM(rooms), 0) AS total_rooms
        FROM bookings
-       WHERE (payment_status IS NULL OR LOWER(payment_status) NOT IN ('cancelled', 'failed', 'expired'))
+       WHERE LOWER(payment_status) IN ('success', 'paid', 'partial')
          AND DATE(check_in) <= ?
          AND DATE(check_out) > ?
          AND accommodation_id = ?`,

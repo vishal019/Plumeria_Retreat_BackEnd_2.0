@@ -15,7 +15,7 @@ const port = process.env.PORT || 5000;
 app.use(express.urlencoded({ extended: true }));
 // Setup logging
 const accessLogStream = fs.createWriteStream(
-  path.join(__dirname, 'access.log'), 
+  path.join(__dirname, 'access.log'),
   { flags: 'a' }
 );
 app.use(morgan('combined', { stream: accessLogStream }));
@@ -24,7 +24,7 @@ app.use(morgan('dev')); // Log to console in development
 // Middleware
 app.use(cors({
   origin: [
-    'http://localhost:5173', 
+    'http://localhost:5173',
     'https://adminplumeria.vercel.app',
     'https://www.plumeriaretreat.com',
     'https://admin.plumeriaretreat.com',
@@ -75,7 +75,7 @@ app.use(async (req, res, next) => {
   } catch (err) {
     console.error('DB Connection Error:', err);
     if (conn) await conn.release().catch(e => console.error('Release error:', e));
-    res.status(503).json({ 
+    res.status(503).json({
       error: 'Service unavailable',
       message: 'Database connection failed'
     });
@@ -154,7 +154,7 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Global error:', err);
-  
+
   if (err instanceof TypeError && err.message.includes('Missing parameter name')) {
     return res.status(500).json({
       error: 'Invalid route configuration',
@@ -162,7 +162,7 @@ app.use((err, req, res, next) => {
       timestamp: new Date().toISOString()
     });
   }
-  
+
   res.status(err.status || 500).json({
     error: err.message || 'Internal Server Error',
     timestamp: new Date().toISOString()
@@ -172,7 +172,7 @@ app.use((err, req, res, next) => {
 // Graceful shutdown
 const shutdown = async () => {
   console.log('\n[Shutdown] Starting graceful shutdown...');
-  
+
   try {
     await pool.end();
     console.log('[Shutdown] Database pool closed successfully');

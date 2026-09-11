@@ -115,13 +115,13 @@ router.get(['/stats', '/summary'], async (req, res) => {
       ? accommodations.reduce((sum, a) => sum + (parseInt(a.rooms, 10) || 1), 0)
       : 0;
 
-    // 7. Active Bookings Today (Occupancy)
+    // 7. Active Bookings Today (Occupancy - only confirmed/paid bookings allocate rooms)
     let bookedCottagesToday = 0;
     try {
       const [[resBCT]] = await pool.query(
         `SELECT IFNULL(SUM(rooms), 0) AS bookedCottagesToday FROM bookings 
          WHERE DATE(check_in) <= CURDATE() AND DATE(check_out) >= CURDATE()
-         AND (payment_status IS NULL OR payment_status NOT IN ('cancelled', 'failed'))`
+         AND LOWER(payment_status) IN ('success', 'paid', 'partial')`
       );
       if (resBCT && resBCT.bookedCottagesToday !== null) {
         bookedCottagesToday = parseInt(resBCT.bookedCottagesToday, 10);
@@ -153,7 +153,7 @@ router.get(['/stats', '/summary'], async (req, res) => {
           FROM bookings b
           JOIN accommodations a ON b.accommodation_id = a.id
           WHERE DATE(b.check_in) <= CURDATE() AND DATE(b.check_out) >= CURDATE()
-          AND (b.payment_status IS NULL OR b.payment_status NOT IN ('cancelled', 'failed'))
+          AND LOWER(b.payment_status) IN ('success', 'paid', 'partial')
           GROUP BY a.name
         `);
         (catBookings || []).forEach(cb => {
