@@ -1170,11 +1170,10 @@ routes.patch('/accommodations/:id/toggle-availability', async (req, res) => {
 // GET /admin/properties/users
 routes.get('/users', async (req, res) => {
     try {
-        const connection = await createConnection();
-        const [rows] = await connection.execute('SELECT id, name, email FROM users');
-        await closeConnection(connection);
+        const [rows] = await pool.execute('SELECT id, name, email FROM users');
         res.json(rows);
     } catch (error) {
+        console.error('Error fetching users:', error);
         res.status(500).json({ error: 'Failed to fetch users' });
     }
 });
@@ -1182,11 +1181,10 @@ routes.get('/users', async (req, res) => {
 // GET /admin/properties/cities
 routes.get('/cities', async (req, res) => {
     try {
-        const connection = await createConnection();
-        const [rows] = await connection.execute('SELECT id, name, country FROM cities WHERE active = 1');
-        await closeConnection(connection);
+        const [rows] = await pool.execute('SELECT id, name, country FROM cities WHERE active = 1');
         res.json(rows);
     } catch (error) {
+        console.error('Error fetching cities:', error);
         res.status(500).json({ error: 'Failed to fetch cities' });
     }
 });

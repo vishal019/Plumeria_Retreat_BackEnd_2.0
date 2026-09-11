@@ -65,34 +65,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Database connection middleware
-app.use(async (req, res, next) => {
-  let conn;
-  try {
-    conn = await pool.getConnection();
-    req.db = conn;
-    next();
-  } catch (err) {
-    console.error('DB Connection Error:', err);
-    if (conn) await conn.release().catch(e => console.error('Release error:', e));
-    res.status(503).json({
-      error: 'Service unavailable',
-      message: 'Database connection failed'
-    });
-  }
-});
-
-// Ensure connections are released
+// Pool attachment
 app.use((req, res, next) => {
-  res.on('finish', async () => {
-    if (req.db) {
-      try {
-        await req.db.release();
-      } catch (err) {
-        console.error('Connection release error:', err);
-      }
-    }
-  });
+  req.pool = pool;
   next();
 });
 
@@ -139,6 +114,9 @@ loadRoutes('./routes/coupons', '/admin/coupons');
 loadRoutes('./routes/cities', '/admin/cities');
 loadRoutes('./routes/ammenities', '/admin/amenities');
 loadRoutes('./routes/bookings', '/admin/bookings');
+loadRoutes('./routes/bookings', '/api/bookings');
+loadRoutes('./routes/bookings', '/bookings');
+loadRoutes('./routes/bookings', '/api');
 loadRoutes('./routes/ratings', '/admin/ratings');
 loadRoutes('./routes/calendar', '/admin/calendar');
 

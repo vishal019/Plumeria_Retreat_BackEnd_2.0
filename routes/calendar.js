@@ -42,13 +42,19 @@ router.get('/blocked-dates', async (req, res) => {
       ORDER BY bd.blocked_date DESC
     `);
 
+    const formatDateTime = (val) => {
+      if (!val) return null;
+      if (val instanceof Date) return val.toLocaleString('en-GB', { hour12: false });
+      return String(val);
+    };
+
     const formattedRows = rows.map(r => ({
-  ...r,
-  rooms: r.rooms !== null ? r.rooms.toString() : "0",
-  reason: r.reason || "",
-  created_at: r.created_at ? r.created_at.toLocaleString('en-GB', { hour12: false }) : null,
-  updated_at: r.updated_at ? r.updated_at.toLocaleString('en-GB', { hour12: false }) : null
-}));
+      ...r,
+      rooms: r.rooms !== null && r.rooms !== undefined ? r.rooms.toString() : "0",
+      reason: r.reason || "",
+      created_at: formatDateTime(r.created_at),
+      updated_at: formatDateTime(r.updated_at)
+    }));
 
     res.json({ success: true, data: formattedRows });
   } catch (error) {
@@ -87,13 +93,19 @@ router.get('/blocked-dates/:id', async (req, res) => {
 
     const [rows] = await pool.execute(query, params);
 
+    const formatDateTime = (val) => {
+      if (!val) return null;
+      if (val instanceof Date) return val.toLocaleString('en-GB', { hour12: false });
+      return String(val);
+    };
+
     const formattedRows = rows.map(r => ({
-  ...r,
-  rooms: r.rooms !== null ? r.rooms.toString() : "0",
-  reason: r.reason || "",
-  created_at: r.created_at ? r.created_at.toLocaleString('en-GB', { hour12: false }) : null,
-  updated_at: r.updated_at ? r.updated_at.toLocaleString('en-GB', { hour12: false }) : null
-}));
+      ...r,
+      rooms: r.rooms !== null && r.rooms !== undefined ? r.rooms.toString() : "0",
+      reason: r.reason || "",
+      created_at: formatDateTime(r.created_at),
+      updated_at: formatDateTime(r.updated_at)
+    }));
 
     res.json({ success: true, data: formattedRows });
   } catch (error) {

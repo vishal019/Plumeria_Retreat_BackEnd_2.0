@@ -11,13 +11,13 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME || 'u973488458_plumeria',
   port: parseInt(process.env.DB_PORT || '3306'),
   
-  // Conservative pool settings
-  connectionLimit: 5,
-  waitForConnections: false,
+  // Robust pool settings
+  connectionLimit: 20,
+  waitForConnections: true,
   queueLimit: 0,
-  connectTimeout: 10000,
+  connectTimeout: 15000,
   idleTimeout: 30000,
-  maxIdle: 2,
+  maxIdle: 5,
   enableKeepAlive: true,
   keepAliveInitialDelay: 10000,
   namedPlaceholders: true
