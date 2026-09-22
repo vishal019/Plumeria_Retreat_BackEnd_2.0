@@ -791,12 +791,13 @@ router.post("/offline", async (req, res) => {
   }
 });
 
-router.delete('/delete/:id', async (req, res) => {
+router.delete(['/:id', '/delete/:id', '/bookings/:id', '/bookings/delete/:id'], async (req, res) => {
   try {
     const { id } = req.params;
+    const bookingId = parseInt(id, 10);
 
     // Validate ID
-    if (isNaN(parseInt(id))) {
+    if (isNaN(bookingId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid booking ID',
@@ -804,9 +805,9 @@ router.delete('/delete/:id', async (req, res) => {
     }
 
     // Check if booking exists
-    const [existing] = await pool.execute('SELECT * FROM bookings WHERE id = ?', [id]);
+    const [existing] = await pool.execute('SELECT id FROM bookings WHERE id = ?', [bookingId]);
 
-    if (existing.length === 0) {
+    if (!existing || existing.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Booking not found',
@@ -814,19 +815,18 @@ router.delete('/delete/:id', async (req, res) => {
     }
 
     // Delete booking
-    await pool.execute('DELETE FROM bookings WHERE id = ?', [id]);
+    await pool.execute('DELETE FROM bookings WHERE id = ?', [bookingId]);
 
     return res.json({
       success: true,
       message: 'Booking deleted successfully',
     });
-  } catch (error){
-    await connection.rollback();
-    console.error("❌ Error creating booking:", error.sqlMessage || error.message);
+  } catch (error) {
+    console.error("❌ Error deleting booking:", error.sqlMessage || error.message);
   
     res.status(500).json({
       success: false,
-      error: "Failed to create booking",
+      error: "Failed to delete booking",
       details: error.sqlMessage || error.message, // 👈 expose real DB error
     });
   }
@@ -4208,7 +4208,7 @@ router.get("/room-occupancy", async (req, res) => {
     const [result] = await pool.execute(
       `SELECT COALESCE(SUM(rooms), 0) AS total_rooms
        FROM bookings
-       WHERE LOWER(payment_status) IN ('success', 'paid', 'partial')
+       WHERE LOWER(payment_status) IN ('success', 'paid', 'partial', 'confirmed')
          AND DATE(check_in) <= ?
          AND DATE(check_out) > ?
          AND accommodation_id = ?`,

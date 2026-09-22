@@ -24,6 +24,7 @@ require('dotenv').config();
     ['guest_stories', 'LONGTEXT NULL'],
     ['max_adults', 'INT NULL DEFAULT 2'],
     ['max_children', 'INT NULL DEFAULT 0'],
+    ['badge', 'VARCHAR(100) NULL'],
   ];
 
   const [existing] = await conn.query(

@@ -312,6 +312,7 @@ const EXTENDED_COLUMNS = [
     ['guest_stories', 'LONGTEXT NULL'],
     ['max_adults', 'INT NULL DEFAULT 2'],
     ['max_children', 'INT NULL DEFAULT 0'],
+    ['badge', 'VARCHAR(100) NULL'],
     ['meal_plans', 'LONGTEXT NULL'],
 ];
 
@@ -414,6 +415,13 @@ const extractExtendedFields = (basicInfo = {}, current = {}, reqBody = {}) => ({
     guestStories: (basicInfo.guestStories !== undefined ? basicInfo.guestStories : (reqBody.guestStories ?? reqBody.guest_stories ?? basicInfo.guest_stories)) !== undefined
         ? toJson(basicInfo.guestStories ?? reqBody.guestStories ?? reqBody.guest_stories ?? basicInfo.guest_stories, [])
         : (current.guest_stories ?? toJson([], [])),
+    badge: basicInfo.badge !== undefined
+        ? (basicInfo.badge ? String(basicInfo.badge).trim() : null)
+        : (basicInfo.badge_type !== undefined
+            ? (basicInfo.badge_type ? String(basicInfo.badge_type).trim() : null)
+            : (reqBody.badge !== undefined
+                ? (reqBody.badge ? String(reqBody.badge).trim() : null)
+                : (current.badge || null))),
 });
 
 const formatListItem = (row) => ({
@@ -427,6 +435,7 @@ const formatListItem = (row) => ({
     maxChildren: row.max_children !== null && row.max_children !== undefined ? Number(row.max_children) : Math.max(0, (row.max_guests || row.capacity || 2) - (row.capacity || 2)),
     rooms: row.rooms,
     available: Boolean(row.available),
+    badge: row.badge || null,
     features: parseJSONField(row.features, []),
     images: parseJSONField(row.images, []),
     imageDetails: parseJSONField(row.image_details, []),
@@ -502,7 +511,9 @@ const formatDetail = (accommodation) => ({
         rulesAndPolicies: parseJSONField(accommodation.rules_and_policies, {}),
         faqs: parseJSONField(accommodation.faqs, []),
         guestStories: parseJSONField(accommodation.guest_stories, []),
+        badge: accommodation.badge || null,
     },
+    badge: accommodation.badge || null,
     location: {
         owner: {
             id: accommodation.owner_id,
@@ -601,7 +612,7 @@ routes.get('/accommodations', async (req, res) => {
                 created_at, updated_at, MaxPersonVilla, RatePerPerson, meal_plans,
                 meta_title, meta_description, page_heading, room_numbers, activities,
                 meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories,
-                max_adults, max_children
+                max_adults, max_children, badge
             FROM accommodations
         `;
 
@@ -837,8 +848,8 @@ routes.post('/accommodations', async (req, res) => {
              address, latitude, longitude, amenity_ids, package_name, package_description, package_images,
              adult_price, child_price, max_guests, max_adults, max_children, MaxPersonVilla, RatePerPerson, meal_plans,
              meta_title, meta_description, page_heading, image_details, room_numbers, activities,
-             meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories, badge)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 name,
                 description || null,
@@ -878,6 +889,7 @@ routes.post('/accommodations', async (req, res) => {
                 extended.rulesAndPolicies,
                 extended.faqs,
                 extended.guestStories,
+                extended.badge,
             ]
         );
 
@@ -992,6 +1004,7 @@ routes.put('/accommodations/:id', async (req, res) => {
                 image_details = ?, room_numbers = ?, activities = ?,
                 meal_details = ?, how_to_reach = ?, nearby_places = ?,
                 rules_and_policies = ?, faqs = ?, guest_stories = ?,
+                badge = ?,
                 updated_at = CURRENT_TIMESTAMP()
             WHERE id = ?`,
             [
@@ -1006,6 +1019,7 @@ routes.put('/accommodations/:id', async (req, res) => {
                 extended.imageDetails, extended.roomNumbers, extended.activities,
                 extended.mealDetails, extended.howToReach, extended.nearbyPlaces,
                 extended.rulesAndPolicies, extended.faqs, extended.guestStories,
+                extended.badge,
                 id,
             ]
         );
