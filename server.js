@@ -119,6 +119,9 @@ loadRoutes('./routes/bookings', '/bookings');
 loadRoutes('./routes/bookings', '/api');
 loadRoutes('./routes/ratings', '/admin/ratings');
 loadRoutes('./routes/calendar', '/admin/calendar');
+loadRoutes('./routes/banners', '/admin/banners');
+loadRoutes('./routes/banners', '/api/banners');
+loadRoutes('./routes/banners', '/banners');
 
 // 404 Handler
 app.use((req, res) => {
