@@ -31,7 +31,9 @@ app.use(cors({
     'https://www.admin.plumeriaretreat.com',
     'https://plumeriaretreat.vercel.app',
     'http://localhost:5174',
-    'https://plumeriaretreat.com'
+    'https://plumeriaretreat.com',
+    'https://testplumeriaretreat.digitaldiaries.in',
+    'https://adminplumeriaretreat.digitaldiaries.in'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -108,6 +110,8 @@ const loadRoutes = (routePath, routePrefix) => {
 // Load all routes with error handling
 loadRoutes('./routes/dashboard', '/admin/dashboard');
 loadRoutes('./routes/properties', '/admin/properties');
+loadRoutes('./routes/properties', '/properties');
+loadRoutes('./routes/properties', '/api/properties');
 loadRoutes('./routes/gallery', '/admin/gallery');
 loadRoutes('./routes/users', '/admin/users');
 loadRoutes('./routes/coupons', '/admin/coupons');
@@ -118,7 +122,11 @@ loadRoutes('./routes/bookings', '/api/bookings');
 loadRoutes('./routes/bookings', '/bookings');
 loadRoutes('./routes/bookings', '/api');
 loadRoutes('./routes/ratings', '/admin/ratings');
+loadRoutes('./routes/ratings', '/ratings');
+loadRoutes('./routes/categories', '/admin/categories');
+loadRoutes('./routes/categories', '/categories');
 loadRoutes('./routes/calendar', '/admin/calendar');
+loadRoutes('./routes/calendar', '/calendar');
 loadRoutes('./routes/banners', '/admin/banners');
 loadRoutes('./routes/banners', '/api/banners');
 loadRoutes('./routes/banners', '/banners');

@@ -443,6 +443,9 @@ const formatListItem = (row) => ({
     max_person_villa: row.MaxPersonVilla,
     rate_per_person: row.RatePerPerson,
     mealPlans: parseJSONField(row.meal_plans, []),
+    meal_plans: row.meal_plans,
+    adult_price: row.adult_price,
+    child_price: row.child_price,
     location: {
         address: row.address,
         coordinates: {
@@ -500,6 +503,9 @@ const formatDetail = (accommodation) => ({
         MaxPersonVilla: accommodation.MaxPersonVilla || 0,
         RatePersonVilla: accommodation.RatePerPerson || 0,
         mealPlans: parseJSONField(accommodation.meal_plans, []),
+        meal_plans: accommodation.meal_plans,
+        adult_price: accommodation.adult_price,
+        child_price: accommodation.child_price,
         metaTitle: accommodation.meta_title || '',
         metaDescription: accommodation.meta_description || '',
         pageHeading: accommodation.page_heading || '',
@@ -943,15 +949,24 @@ routes.put('/accommodations/:id', async (req, res) => {
             packages = {},
         } = req.body;
 
-        const name = basicInfo.name ?? current.name;
+        const extended = extractExtendedFields(basicInfo, current, req.body);
+        const name = basicInfo.name ?? current.name ?? 'Accommodation';
         const description = basicInfo.description ?? current.description;
-        const type = basicInfo.type ?? current.type;
-        const capacity = basicInfo.capacity ?? current.capacity;
-        const rooms = basicInfo.rooms ?? current.rooms;
-        const price = basicInfo.price ?? current.price;
+        const type = basicInfo.type ?? current.type ?? 'Villa';
+        const capacity = Math.max(1, Number(basicInfo.capacity ?? current.capacity ?? 2));
+        const rooms = Math.max(1, Number(basicInfo.rooms ?? current.rooms ?? 1));
+        const price = Math.max(1, Number(basicInfo.price ?? req.body.price ?? req.body.adult_price ?? current.price ?? 1));
         const MaxPersonVilla = basicInfo.MaxPersonVilla ?? current.MaxPersonVilla;
         const RatePerPerson = basicInfo.RatePersonVilla ?? current.RatePerPerson;
-        const mealPlans = basicInfo.mealPlans !== undefined ? JSON.stringify(basicInfo.mealPlans) : current.meal_plans;
+        const mealPlans = basicInfo.mealPlans !== undefined 
+            ? (typeof basicInfo.mealPlans === 'string' ? basicInfo.mealPlans : JSON.stringify(basicInfo.mealPlans))
+            : (basicInfo.meal_plans !== undefined
+                ? (typeof basicInfo.meal_plans === 'string' ? basicInfo.meal_plans : JSON.stringify(basicInfo.meal_plans))
+                : (req.body.mealPlans !== undefined
+                    ? (typeof req.body.mealPlans === 'string' ? req.body.mealPlans : JSON.stringify(req.body.mealPlans))
+                    : (req.body.meal_plans !== undefined
+                        ? (typeof req.body.meal_plans === 'string' ? req.body.meal_plans : JSON.stringify(req.body.meal_plans))
+                        : current.meal_plans)));
 
         const address = location.address ?? current.address;
         const cityId = location.cityId ?? current.city_id;
@@ -960,8 +975,8 @@ routes.put('/accommodations/:id', async (req, res) => {
 
         const packageName = packages.name ?? current.package_name;
         const packageDescription = packages.description ?? current.package_description;
-        const adultPrice = packages.pricing?.adult ?? basicInfo.adultPrice ?? basicInfo.RatePersonVilla ?? current.adult_price ?? 0;
-        const childPrice = packages.pricing?.child ?? basicInfo.childPrice ?? current.child_price ?? 0;
+        const adultPrice = packages.pricing?.adult ?? basicInfo.adultPrice ?? basicInfo.RatePersonVilla ?? req.body.adult_price ?? req.body.adultPrice ?? current.adult_price ?? price ?? 0;
+        const childPrice = packages.pricing?.child ?? basicInfo.childPrice ?? req.body.child_price ?? req.body.childPrice ?? current.child_price ?? 0;
         const maxAdults = basicInfo.maxAdults ?? packages.pricing?.maxAdults ?? extended.maxAdults ?? current.max_adults ?? capacity ?? 2;
         const maxChildren = basicInfo.maxChildren ?? packages.pricing?.maxChildren ?? extended.maxChildren ?? current.max_children ?? 0;
         const maxGuests = packages.pricing?.maxGuests ?? basicInfo.maxGuests ?? (Number(maxAdults) + Number(maxChildren)) ?? basicInfo.MaxPersonVilla ?? current.max_guests ?? capacity ?? 2;
@@ -982,13 +997,9 @@ routes.put('/accommodations/:id', async (req, res) => {
         const finalImages = basicInfo.images ? JSON.stringify(basicInfo.images) : current.images;
         const finalAmenityIds = amenities.ids ? JSON.stringify(amenities.ids) : current.amenity_ids;
         const finalPackageImages = packages.images ? JSON.stringify(packages.images) : current.package_images;
-        const extended = extractExtendedFields(basicInfo, current, req.body);
 
         if (!name || !type) {
             throw new Error('Missing required fields: name and type');
-        }
-        if (Number(capacity) <= 0 || Number(rooms) <= 0 || Number(price) <= 0) {
-            throw new Error('Capacity, rooms, and price must be positive numbers');
         }
 
         const [result] = await connection.execute(
