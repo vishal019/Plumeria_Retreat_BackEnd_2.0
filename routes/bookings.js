@@ -20,7 +20,7 @@ require("dotenv").config();
 
 const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || "https://plumeriaretreat.vercel.app";
 
-const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || "https://a.plumeriaretreat.com";
+const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || "https://pr.plumeriaretreat.com";
 
 // BOOKING CLEANUP JOB
 
@@ -292,7 +292,7 @@ router.post("/", async (req, res) => {
     meal_plan,
     meal_plan_price,
     req.body.notes || null,
-    req.body.activities || null,
+    req.body.activities ? (typeof req.body.activities === 'string' ? req.body.activities : JSON.stringify(req.body.activities)) : null,
     req.body.activities_total || 0
   ]
 );
