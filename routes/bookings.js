@@ -720,7 +720,7 @@ router.post("/offline", async (req, res) => {
       coupon: coupon || "",
       discount: discount || "",
       full_amount: full_amount || "",
-      acc_type: booking.accommodation_type || "camping", mealPlan: booking.meal_plan, notes: booking.notes, activitiesTotal: booking.activities_total
+      acc_type: booking.accommodation_type || "camping", mealPlan: booking.meal_plan, notes: booking.notes, activitiesTotal: booking.activities_total, activities: booking.activities
     });
     } catch (emailError) {
       // Log email error but don't fail the response
@@ -1048,6 +1048,7 @@ router.post("/payments/razorpay/verify", async (req, res) => {
           full_amount: bk.full_amount || "0",
           acc_type: (acc.type || "camping").toLowerCase(),
           rooms: bk.rooms || 1, mealPlan: bk.meal_plan, notes: bk.notes, activitiesTotal: bk.activities_total,
+          activities: bk.activities,
         });
         console.log("✅ Confirmation email sent to:", recipientEmail);
       } catch (mailErr) {
@@ -1387,7 +1388,8 @@ async function sendPdfEmail(params) {
     acc_type,
     mealPlan,
     notes,
-    activitiesTotal
+    activitiesTotal,
+    activities
   } = params;
 
   console.log("Sending PDF email to:", email);
@@ -1405,6 +1407,15 @@ async function sendPdfEmail(params) {
   const roomsCount = rooms || 1;
   const bookedDate = BookingDate; 
   
+  let parsedActivities = [];
+  if (activities) {
+    try {
+      parsedActivities = typeof activities === 'string' ? JSON.parse(activities) : activities;
+    } catch (e) {
+      console.error("Failed to parse activities JSON for email", e);
+    }
+  }
+
   const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 
@@ -1546,6 +1557,15 @@ async function sendPdfEmail(params) {
                         <tr>
                           <td style="color: #6E6761; padding-bottom: 2px;">Activities & Add-ons:</td>
                           <td align="right" style="color: #2D2520; padding-bottom: 2px;"><b>+ ₹${activitiesTotal}</b></td>
+                        </tr>
+                        ` : ''}
+                        ${parsedActivities && parsedActivities.length > 0 ? `
+                        <tr>
+                          <td colspan="2" style="font-size: 11px; color: #8F8780; padding-bottom: 8px; line-height: 15px;">
+                            <ul style="margin: 0; padding-left: 15px;">
+                              ${parsedActivities.map(act => `<li>${act.title} (x${act.quantity || 1}) - ₹${act.price * (act.quantity || 1)}</li>`).join('')}
+                            </ul>
+                          </td>
                         </tr>
                         ` : ''}
                         ${notes ? `
@@ -1739,7 +1759,7 @@ router.post("/success/verify/:txnid", async (req, res) => {
     const [bookings] = await pool.execute(`
       SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, 
              food_veg, food_nonveg, food_jain, check_in, check_out, 
-             total_amount, advance_amount, accommodation_id , coupon_code ,discount_amount ,full_amount
+             total_amount, advance_amount, accommodation_id , coupon_code ,discount_amount ,full_amount, activities, activities_total, meal_plan, notes
       FROM bookings WHERE payment_txn_id = ?`,
       [txnid]
     );
@@ -1832,7 +1852,7 @@ router.post("/success/verify/:txnid", async (req, res) => {
           full_amount: bk.full_amount || "0",
           acc_type: acc.type.toLowerCase() || 'camping', mealPlan: bk.meal_plan,
           rooms: bk.rooms || 0,
-          notes: bk.notes, activitiesTotal: bk.activities_total,
+          notes: bk.notes, activitiesTotal: bk.activities_total, activities: bk.activities,
         });
         console.log("✅ Confirmation email sent to:", recipientEmail);
       } catch (e) {
