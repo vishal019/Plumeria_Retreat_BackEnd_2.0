@@ -35,6 +35,7 @@ router.get('/blocked-dates', async (req, res) => {
         a.name AS accommodation_name,
         bd.adult_price,
         bd.child_price,
+        bd.meal_plans,
         bd.created_at,
         bd.updated_at
       FROM blocked_dates bd
@@ -79,6 +80,7 @@ router.get('/blocked-dates/:id', async (req, res) => {
         a.name AS accommodation_name,
         bd.adult_price,
         bd.child_price,
+        bd.meal_plans,
         bd.created_at,
         bd.updated_at
       FROM blocked_dates bd
@@ -120,7 +122,7 @@ router.get('/blocked-dates/:id', async (req, res) => {
 // POST /blocked-dates
 router.post('/blocked-dates', async (req, res) => {
   try {
-    const { dates, reason, accommodation_id, room_number, adult_price, child_price } = req.body;
+    const { dates, reason, accommodation_id, room_number, adult_price, child_price, meal_plans } = req.body;
 
     console.log('Blocking dates:', {
       dates,
@@ -128,7 +130,8 @@ router.post('/blocked-dates', async (req, res) => {
       accommodation_id,
       room_number,
       adult_price,
-      child_price
+      child_price,
+      meal_plans: meal_plans ? '(provided)' : null
     });
 
     if (!dates || !Array.isArray(dates) || dates.length === 0) {
@@ -137,6 +140,8 @@ router.post('/blocked-dates', async (req, res) => {
 
     const now = new Date(); // Node-generated timestamp
 
+    const mealPlansValue = meal_plans || null;
+
     const values = dates.map(date => [
       date,
       reason,
@@ -144,15 +149,16 @@ router.post('/blocked-dates', async (req, res) => {
       String(room_number),
       adult_price,
       child_price,
+      mealPlansValue,
       now,
       now
     ]);
 
-    const placeholders = values.map(() => "(?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+    const placeholders = values.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
 
     await pool.execute(
       `INSERT INTO blocked_dates 
-       (blocked_date, reason, accommodation_id, rooms, adult_price, child_price, created_at, updated_at)
+       (blocked_date, reason, accommodation_id, rooms, adult_price, child_price, meal_plans, created_at, updated_at)
        VALUES ${placeholders}`,
       values.flat()
     );
@@ -168,15 +174,16 @@ router.post('/blocked-dates', async (req, res) => {
 router.put('/blocked-dates/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason, accommodation_id, room_number, adult_price, child_price } = req.body;
+    const { reason, accommodation_id, room_number, adult_price, child_price, meal_plans } = req.body;
 
     const now = new Date(); // Node-generated timestamp for update
+    const mealPlansValue = meal_plans || null;
 
     const [result] = await pool.execute(
       `UPDATE blocked_dates 
-       SET reason=?, accommodation_id=?, rooms=?, adult_price=?, child_price=?, updated_at=? 
+       SET reason=?, accommodation_id=?, rooms=?, adult_price=?, child_price=?, meal_plans=?, updated_at=? 
        WHERE id=?`,
-      [reason, accommodation_id, String(room_number), adult_price, child_price, now, id]
+      [reason, accommodation_id, String(room_number), adult_price, child_price, mealPlansValue, now, id]
     );
 
     if (result.affectedRows === 0) {
