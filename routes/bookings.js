@@ -60,6 +60,18 @@ const ensureBookingsMealPlanSchema = async () => {
       await pool.query("ALTER TABLE bookings ADD COLUMN meal_plan_price DECIMAL(10,2) NULL DEFAULT 0.00");
       console.log("[bookings] added column meal_plan_price");
     }
+    if (!names.has('extra_adults')) {
+      await pool.query("ALTER TABLE bookings ADD COLUMN extra_adults INT NULL DEFAULT 0");
+    }
+    if (!names.has('base_price')) {
+      await pool.query("ALTER TABLE bookings ADD COLUMN base_price DECIMAL(10,2) NULL DEFAULT 0.00");
+    }
+    if (!names.has('extra_adult_price')) {
+      await pool.query("ALTER TABLE bookings ADD COLUMN extra_adult_price DECIMAL(10,2) NULL DEFAULT 0.00");
+    }
+    if (!names.has('child_price')) {
+      await pool.query("ALTER TABLE bookings ADD COLUMN child_price DECIMAL(10,2) NULL DEFAULT 0.00");
+    }
   } catch (err) {
     console.warn("Bookings schema check warning (non-fatal):", err.message);
   }
@@ -192,6 +204,10 @@ router.post("/", async (req, res) => {
       payment_method = "razorpay",
       meal_plan = null,
       meal_plan_price = 0,
+      extra_adults = 0,
+      base_price = 0,
+      extra_adult_price = 0,
+      child_price = 0,
     } = req.body;
 
     console.log(req.body);
@@ -264,8 +280,8 @@ router.post("/", async (req, res) => {
     check_in, check_out, adults, children, rooms, food_veg, food_nonveg, 
     food_jain, total_amount, advance_amount, payment_status, payment_txn_id, 
     coupon_code, discount_amount, full_amount, created_at, meal_plan, meal_plan_price,
-    notes, activities, activities_total
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    notes, activities, activities_total, extra_adults, base_price, extra_adult_price, child_price
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   [
     guest_name,
     guest_email,
@@ -293,7 +309,11 @@ router.post("/", async (req, res) => {
     meal_plan_price,
     req.body.notes || null,
     req.body.activities ? (typeof req.body.activities === 'string' ? req.body.activities : JSON.stringify(req.body.activities)) : null,
-    req.body.activities_total || 0
+    req.body.activities_total || 0,
+    extra_adults || 0,
+    base_price || 0,
+    extra_adult_price || 0,
+    child_price || 0
   ]
 );
 
@@ -364,7 +384,10 @@ router.post("/offline", async (req, res) => {
       extra_adults = 0,
       isvilla,
       meal_plan = null,
-      meal_plan_price = 0
+      meal_plan_price = 0,
+      base_price = 0,
+      extra_adult_price = 0,
+      child_price = 0
     } = req.body;
 
     
@@ -523,8 +546,8 @@ router.post("/offline", async (req, res) => {
         `INSERT INTO bookings (
           guest_name, guest_email, guest_phone, accommodation_id,
           check_in, check_out, adults, children, rooms, food_veg, food_nonveg,
-          food_jain, total_amount, advance_amount, payment_status, payment_txn_id, created_at, meal_plan, meal_plan_price, notes, activities, activities_total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          food_jain, total_amount, advance_amount, payment_status, payment_txn_id, created_at, meal_plan, meal_plan_price, notes, activities, activities_total, extra_adults, base_price, extra_adult_price, child_price
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           guest_name,
           guest_email,
@@ -547,7 +570,11 @@ router.post("/offline", async (req, res) => {
           meal_plan_price,
           req.body.notes || null,
           req.body.activities ? (typeof req.body.activities === 'string' ? req.body.activities : JSON.stringify(req.body.activities)) : null,
-          req.body.activities_total || 0
+          req.body.activities_total || 0,
+          extra_adults || 0,
+          base_price || 0,
+          extra_adult_price || 0,
+          child_price || 0
         ]
       );
     } catch (insertError) {
@@ -720,7 +747,8 @@ router.post("/offline", async (req, res) => {
       coupon: coupon || "",
       discount: discount || "",
       full_amount: full_amount || "",
-      acc_type: booking.accommodation_type || "camping", mealPlan: booking.meal_plan, notes: booking.notes, activitiesTotal: booking.activities_total, activities: booking.activities
+      acc_type: booking.accommodation_type || "camping", mealPlan: booking.meal_plan, mealPlanPrice: booking.meal_plan_price, notes: booking.notes, activitiesTotal: booking.activities_total, activities: booking.activities,
+      extra_adults: booking.extra_adults, base_price: booking.base_price, extra_adult_price: booking.extra_adult_price, child_price: booking.child_price
     });
     } catch (emailError) {
       // Log email error but don't fail the response
@@ -972,7 +1000,7 @@ router.post("/payments/razorpay/verify", async (req, res) => {
       SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, 
              food_veg, food_nonveg, food_jain, check_in, check_out, 
              total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount,
-             activities, activities_total, meal_plan, notes
+             activities, activities_total, meal_plan, notes, extra_adults, base_price, extra_adult_price, child_price
       FROM bookings 
       WHERE payment_txn_id = ? OR id = ?`,
       [razorpay_payment_id, targetBookingId || -1]
@@ -1048,7 +1076,8 @@ router.post("/payments/razorpay/verify", async (req, res) => {
           discount: bk.discount_amount || "0",
           full_amount: bk.full_amount || "0",
           acc_type: (acc.type || "camping").toLowerCase(),
-          rooms: bk.rooms || 1, mealPlan: bk.meal_plan, notes: bk.notes, activitiesTotal: bk.activities_total, activities: bk.activities,
+          rooms: bk.rooms || 1, mealPlan: bk.meal_plan, mealPlanPrice: bk.meal_plan_price, notes: bk.notes, activitiesTotal: bk.activities_total, activities: bk.activities,
+          extra_adults: bk.extra_adults, base_price: bk.base_price, extra_adult_price: bk.extra_adult_price, child_price: bk.child_price,
         });
         console.log("✅ Confirmation email sent to:", recipientEmail);
       } catch (mailErr) {
@@ -1387,9 +1416,14 @@ async function sendPdfEmail(params) {
     rooms,
     acc_type,
     mealPlan,
+    mealPlanPrice,
     notes,
     activitiesTotal,
-    activities
+    activities,
+    extra_adults,
+    base_price,
+    extra_adult_price,
+    child_price
   } = params;
 
   console.log("Sending PDF email to:", email);
@@ -1531,6 +1565,7 @@ async function sendPdfEmail(params) {
                     <!-- Guest & Stay Parameters -->
                     <td valign="top" style="padding: 14px; background: #FAF7F5; border-right: 1px solid #ECE4DC; font-size: 13px; line-height: 20px; color: #3E3834;">
                       <p style="padding-bottom: 6px;">Mobile: <b>${mobile}</b></p>
+                      <p style="padding-bottom: 6px;">Email: <b>${email}</b></p>
                       <p style="padding-bottom: 6px;">Check-In: <b>${CheckinDate}</b></p>
                       <p style="padding-bottom: 6px;">Check-Out: <b>${CheckoutDate}</b></p>
                       <p style="padding-bottom: 6px;">Rooms: <b>${roomsCount}</b></p>
@@ -1547,16 +1582,35 @@ async function sendPdfEmail(params) {
                     <td valign="top" style="padding: 14px; background: #ffffff; font-size: 13px; line-height: 22px; color: #2D2520;">
                       <table width="100%" border="0" cellspacing="0" cellpadding="0">
                         <tr>
-                          <td style="color: #6E6761; padding-bottom: 4px;">Base Amount:</td>
-                          <td align="right" style="padding-bottom: 4px;"><b>₹${full_amount}</b></td>
+                          <td style="color: #6E6761; padding-bottom: 4px;">Accommodation Base (${roomsCount} Room${roomsCount > 1 ? 's' : ''}, ${adult - (Number(extra_adults) || 0)} Base Adult${(adult - (Number(extra_adults) || 0)) > 1 ? 's' : ''}):</td>
+                          <td align="right" style="padding-bottom: 4px;"><b>₹${(Number(base_price) > 0 ? Number(base_price) : (Number(full_amount) - Number(activitiesTotal || 0) - Number(mealPlanPrice || 0) - (Number(extra_adults || 0) * Number(extra_adult_price || 0)) - (Number(child || 0) * Number(child_price || 0)))).toFixed(2)}</b></td>
                         </tr>
 
-                        <!-- NEW ACTIVITIES ROW -->
-                        <!-- NEW ACTIVITIES ROW -->
+                        ${(Number(extra_adults) > 0 && Number(extra_adult_price) > 0) ? `
+                        <tr>
+                          <td style="color: #6E6761; padding-bottom: 2px;">Extra Adults (${extra_adults} x ₹${extra_adult_price}):</td>
+                          <td align="right" style="color: #2D2520; padding-bottom: 2px;"><b>+ ₹${(Number(extra_adults) * Number(extra_adult_price)).toFixed(2)}</b></td>
+                        </tr>
+                        ` : ''}
+
+                        ${(Number(child) > 0 && Number(child_price) > 0) ? `
+                        <tr>
+                          <td style="color: #6E6761; padding-bottom: 2px;">Children (${child} x ₹${child_price}):</td>
+                          <td align="right" style="color: #2D2520; padding-bottom: 2px;"><b>+ ₹${(Number(child) * Number(child_price)).toFixed(2)}</b></td>
+                        </tr>
+                        ` : ''}
+
+                        ${(mealPlan && Number(mealPlanPrice) > 0) ? `
+                        <tr>
+                          <td style="color: #6E6761; padding-bottom: 2px;">Meal Plan (${mealPlan}):</td>
+                          <td align="right" style="color: #2D2520; padding-bottom: 2px;"><b>+ ₹${Number(mealPlanPrice).toFixed(2)}</b></td>
+                        </tr>
+                        ` : ''}
+
                         ${(activitiesTotal && Number(activitiesTotal) > 0) ? `
                         <tr>
                           <td style="color: #6E6761; padding-bottom: 2px;">Activities & Add-ons:</td>
-                          <td align="right" style="color: #2D2520; padding-bottom: 2px;"><b>+ ₹${activitiesTotal}</b></td>
+                          <td align="right" style="color: #2D2520; padding-bottom: 2px;"><b>+ ₹${Number(activitiesTotal).toFixed(2)}</b></td>
                         </tr>
                         ` : ''}
                         ${parsedActivities && parsedActivities.length > 0 ? `
@@ -1759,7 +1813,7 @@ router.post("/success/verify/:txnid", async (req, res) => {
     const [bookings] = await pool.execute(`
       SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, 
              food_veg, food_nonveg, food_jain, check_in, check_out, 
-             total_amount, advance_amount, accommodation_id , coupon_code ,discount_amount ,full_amount, activities, activities_total, meal_plan, notes
+             total_amount, advance_amount, accommodation_id , coupon_code ,discount_amount ,full_amount, activities, activities_total, meal_plan, notes, extra_adults, base_price, extra_adult_price, child_price
       FROM bookings WHERE payment_txn_id = ?`,
       [txnid]
     );
@@ -1850,9 +1904,10 @@ router.post("/success/verify/:txnid", async (req, res) => {
           coupon: bk.coupon_code || "N/A",
           discount: bk.discount_amount || "0",
           full_amount: bk.full_amount || "0",
-          acc_type: acc.type.toLowerCase() || 'camping', mealPlan: bk.meal_plan,
+          acc_type: acc.type.toLowerCase() || 'camping', mealPlan: bk.meal_plan, mealPlanPrice: bk.meal_plan_price,
           rooms: bk.rooms || 0,
           notes: bk.notes, activitiesTotal: bk.activities_total, activities: bk.activities,
+          extra_adults: bk.extra_adults, base_price: bk.base_price, extra_adult_price: bk.extra_adult_price, child_price: bk.child_price,
         });
         console.log("✅ Confirmation email sent to:", recipientEmail);
       } catch (e) {
@@ -1885,7 +1940,7 @@ router.get("/details/:txnid", async (req, res) => {
     const numericId = isNaN(Number(txnid)) ? -1 : Number(txnid);
     const [bookings] = await pool.execute(
       `SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, food_veg, food_nonveg,
-              food_jain, check_in, check_out, total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount, meal_plan, meal_plan_price, notes, activities_total
+              food_jain, check_in, check_out, total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount, meal_plan, meal_plan_price, notes, activities_total, activities, extra_adults, base_price, extra_adult_price, child_price
        FROM bookings 
        WHERE payment_txn_id = ? OR id = ?`,
       [txnid, numericId]
