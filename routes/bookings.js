@@ -263,8 +263,9 @@ router.post("/", async (req, res) => {
     guest_name, guest_email, guest_phone, accommodation_id, package_id,
     check_in, check_out, adults, children, rooms, food_veg, food_nonveg, 
     food_jain, total_amount, advance_amount, payment_status, payment_txn_id, 
-    coupon_code, discount_amount, full_amount, created_at, meal_plan, meal_plan_price
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    coupon_code, discount_amount, full_amount, created_at, meal_plan, meal_plan_price,
+    notes, activities, activities_total
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   [
     guest_name,
     guest_email,
@@ -289,7 +290,10 @@ router.post("/", async (req, res) => {
     req.body.full_amount || null,
     new Date(),
     meal_plan,
-    meal_plan_price
+    meal_plan_price,
+    req.body.notes || null,
+    req.body.activities || null,
+    req.body.activities_total || 0
   ]
 );
 
@@ -519,8 +523,8 @@ router.post("/offline", async (req, res) => {
         `INSERT INTO bookings (
           guest_name, guest_email, guest_phone, accommodation_id,
           check_in, check_out, adults, children, rooms, food_veg, food_nonveg,
-          food_jain, total_amount, advance_amount, payment_status, payment_txn_id, created_at, meal_plan, meal_plan_price
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          food_jain, total_amount, advance_amount, payment_status, payment_txn_id, created_at, meal_plan, meal_plan_price, notes, activities, activities_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           guest_name,
           guest_email,
@@ -540,7 +544,10 @@ router.post("/offline", async (req, res) => {
           payment_txn_id,
           new Date(),
           meal_plan,
-          meal_plan_price
+          meal_plan_price,
+          req.body.notes || null,
+          req.body.activities ? (typeof req.body.activities === 'string' ? req.body.activities : JSON.stringify(req.body.activities)) : null,
+          req.body.activities_total || 0
         ]
       );
     } catch (insertError) {
@@ -713,7 +720,7 @@ router.post("/offline", async (req, res) => {
       coupon: coupon || "",
       discount: discount || "",
       full_amount: full_amount || "",
-      acc_type: isvilla ? "villa" : "resort", mealPlan: booking.meal_plan
+      acc_type: booking.accommodation_type || "camping", mealPlan: booking.meal_plan, notes: booking.notes, activitiesTotal: booking.activities_total
     });
     } catch (emailError) {
       // Log email error but don't fail the response
@@ -1040,7 +1047,7 @@ router.post("/payments/razorpay/verify", async (req, res) => {
           discount: bk.discount_amount || "0",
           full_amount: bk.full_amount || "0",
           acc_type: (acc.type || "camping").toLowerCase(),
-          rooms: bk.rooms || 1, mealPlan: bk.meal_plan,
+          rooms: bk.rooms || 1, mealPlan: bk.meal_plan, notes: bk.notes, activitiesTotal: bk.activities_total,
         });
         console.log("✅ Confirmation email sent to:", recipientEmail);
       } catch (mailErr) {
@@ -1394,7 +1401,7 @@ async function sendPdfEmail(params) {
     return;
   }
 
-  const type = acc_type === 'villa' ? 'Villa' : 'Cottage';
+  const type = acc_type ? (acc_type.charAt(0).toUpperCase() + acc_type.slice(1).toLowerCase()) : 'Accommodation';
   const roomsCount = rooms || 1;
   const bookedDate = BookingDate; 
   
@@ -1516,11 +1523,11 @@ async function sendPdfEmail(params) {
                       <p style="padding-bottom: 6px;">Check-In: <b>${CheckinDate}</b></p>
                       <p style="padding-bottom: 6px;">Check-Out: <b>${CheckoutDate}</b></p>
                       <p style="padding-bottom: 6px;">Rooms: <b>${roomsCount}</b></p>
-                      <p style="padding-bottom: 6px;">${type === 'Villa' ? 'Total Guests' : 'Adults'}: <b>${adult}</b></p>
+                      <p style="padding-bottom: 6px;">Adults: <b>${adult}</b></p>
                       
                       ${mealPlan ? `<p style="padding-bottom: 6px;">Meal Plan: <b>${mealPlan}</b></p>` : ''}
                       
-                      ${(type !== 'Villa' && child > 0) ? `
+                      ${child > 0 ? `
                         <p style="padding-bottom: 6px;">Children: <b>${child}</b></p>
                       ` : ''}
                     </td>
@@ -1534,11 +1541,14 @@ async function sendPdfEmail(params) {
                         </tr>
 
                         <!-- NEW ACTIVITIES ROW -->
-                        ${(activitiesTotal && activitiesTotal > 0) ? `
+                        <!-- NEW ACTIVITIES ROW -->
+                        ${(activitiesTotal && Number(activitiesTotal) > 0) ? `
                         <tr>
                           <td style="color: #6E6761; padding-bottom: 2px;">Activities & Add-ons:</td>
                           <td align="right" style="color: #2D2520; padding-bottom: 2px;"><b>+ ₹${activitiesTotal}</b></td>
                         </tr>
+                        ` : ''}
+                        ${notes ? `
                         <tr>
                           <td colspan="2" style="font-size: 11px; color: #8F8780; padding-bottom: 6px; line-height: 14px;">
                             ${notes}
@@ -1822,7 +1832,7 @@ router.post("/success/verify/:txnid", async (req, res) => {
           full_amount: bk.full_amount || "0",
           acc_type: acc.type.toLowerCase() || 'camping', mealPlan: bk.meal_plan,
           rooms: bk.rooms || 0,
-          acc_type: acc.type.toLowerCase() || 'camping', mealPlan: bk.meal_plan,
+          notes: bk.notes, activitiesTotal: bk.activities_total,
         });
         console.log("✅ Confirmation email sent to:", recipientEmail);
       } catch (e) {
@@ -1855,7 +1865,7 @@ router.get("/details/:txnid", async (req, res) => {
     const numericId = isNaN(Number(txnid)) ? -1 : Number(txnid);
     const [bookings] = await pool.execute(
       `SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, food_veg, food_nonveg,
-              food_jain, check_in, check_out, total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount, meal_plan, meal_plan_price
+              food_jain, check_in, check_out, total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount, meal_plan, meal_plan_price, notes, activities_total
        FROM bookings 
        WHERE payment_txn_id = ? OR id = ?`,
       [txnid, numericId]
@@ -2051,6 +2061,22 @@ const handleBookingUpdate = async (req, res) => {
     if (req.body.meal_plan_price !== undefined) {
       try {
         await pool.execute("UPDATE bookings SET meal_plan_price = ? WHERE id = ?", [parseFloat(req.body.meal_plan_price) || 0, id]);
+      } catch (_) {}
+    }
+    if (req.body.notes !== undefined) {
+      try {
+        await pool.execute("UPDATE bookings SET notes = ? WHERE id = ?", [req.body.notes, id]);
+      } catch (_) {}
+    }
+    if (req.body.activities_total !== undefined) {
+      try {
+        await pool.execute("UPDATE bookings SET activities_total = ? WHERE id = ?", [parseFloat(req.body.activities_total) || 0, id]);
+      } catch (_) {}
+    }
+    if (req.body.activities !== undefined) {
+      try {
+        const actStr = typeof req.body.activities === 'string' ? req.body.activities : JSON.stringify(req.body.activities);
+        await pool.execute("UPDATE bookings SET activities = ? WHERE id = ?", [actStr, id]);
       } catch (_) {}
     }
     if (special_requests !== undefined) {
