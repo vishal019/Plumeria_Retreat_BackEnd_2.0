@@ -971,7 +971,8 @@ router.post("/payments/razorpay/verify", async (req, res) => {
     const [bookings] = await pool.execute(`
       SELECT guest_email, id, guest_name, guest_phone, rooms, adults, children, 
              food_veg, food_nonveg, food_jain, check_in, check_out, 
-             total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount
+             total_amount, advance_amount, accommodation_id, coupon_code, discount_amount, full_amount,
+             activities, activities_total, meal_plan, notes
       FROM bookings 
       WHERE payment_txn_id = ? OR id = ?`,
       [razorpay_payment_id, targetBookingId || -1]
@@ -1047,8 +1048,7 @@ router.post("/payments/razorpay/verify", async (req, res) => {
           discount: bk.discount_amount || "0",
           full_amount: bk.full_amount || "0",
           acc_type: (acc.type || "camping").toLowerCase(),
-          rooms: bk.rooms || 1, mealPlan: bk.meal_plan, notes: bk.notes, activitiesTotal: bk.activities_total,
-          activities: bk.activities,
+          rooms: bk.rooms || 1, mealPlan: bk.meal_plan, notes: bk.notes, activitiesTotal: bk.activities_total, activities: bk.activities,
         });
         console.log("✅ Confirmation email sent to:", recipientEmail);
       } catch (mailErr) {
