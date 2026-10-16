@@ -621,7 +621,7 @@ router.post("/offline", async (req, res) => {
     try {
       const [bookings] = await connection.execute(
         `SELECT b.*, a.name AS accommodation_name, a.address AS accommodation_address,
-         a.latitude, a.longitude, a.owner_id, a.type AS accommodation_type
+         a.latitude, a.longitude, a.owner_id, a.type AS accommodation_type, a.rules_and_policies
          FROM bookings b
          JOIN accommodations a ON b.accommodation_id = a.id
          WHERE b.id = ?`,
@@ -706,6 +706,16 @@ router.post("/offline", async (req, res) => {
 
     const remainingAmount = booking.total_amount - booking.advance_amount;
 
+    let bookingRules = {};
+    try {
+      bookingRules = typeof booking.rules_and_policies === 'string'
+        ? JSON.parse(booking.rules_and_policies)
+        : (booking.rules_and_policies || {});
+    } catch (e) {}
+
+    const checkInTime = bookingRules.checkInTime || 'From 03:00 PM';
+    const checkOutTime = bookingRules.checkOutTime || 'Till 11:00 AM';
+
     try {
       await sendPdfEmail({
       email: booking.guest_email,
@@ -714,6 +724,8 @@ router.post("/offline", async (req, res) => {
       BookingDate: formatDate(booking.created_at),
       CheckinDate: formatDate(booking.check_in),
       CheckoutDate: formatDate(booking.check_out),
+      checkInTime,
+      checkOutTime,
       totalPrice: booking.total_amount,
       advancePayable: booking.advance_amount,
       remainingAmount: remainingAmount.toFixed(2),
@@ -1026,12 +1038,22 @@ router.post("/payments/razorpay/verify", async (req, res) => {
       const recipientEmail = bk.guest_email?.trim();
 
       const [accommodations] = await pool.execute(
-        "SELECT name, address, latitude, longitude, owner_id, type FROM accommodations WHERE id = ?",
+        "SELECT name, address, latitude, longitude, owner_id, type, rules_and_policies FROM accommodations WHERE id = ?",
         [bk.accommodation_id]
       );
 
       const acc = accommodations[0] || {};
       const owner_id = acc.owner_id;
+
+      let accRules = {};
+      try {
+        accRules = typeof acc.rules_and_policies === 'string'
+          ? JSON.parse(acc.rules_and_policies)
+          : (acc.rules_and_policies || {});
+      } catch (e) {}
+
+      const checkInTime = accRules.checkInTime || 'From 03:00 PM';
+      const checkOutTime = accRules.checkOutTime || 'Till 11:00 AM';
 
       let ownerName = "", ownerEmail = "", ownerPhone = "";
       if (owner_id) {
@@ -1055,6 +1077,8 @@ router.post("/payments/razorpay/verify", async (req, res) => {
           BookingDate: formattedDate,
           CheckinDate: formatDate(bk.check_in),
           CheckoutDate: formatDate(bk.check_out),
+          checkInTime,
+          checkOutTime,
           totalPrice: bk.total_amount,
           advancePayable: bk.advance_amount,
           remainingAmount: remainingAmount.toFixed(2),
@@ -1393,6 +1417,8 @@ async function sendPdfEmail(params) {
     BookingDate,
     CheckinDate,
     CheckoutDate,
+    checkInTime: rawCheckInTime,
+    checkOutTime: rawCheckOutTime,
     totalPrice,
     advancePayable,
     remainingAmount,
@@ -1440,6 +1466,15 @@ async function sendPdfEmail(params) {
   const type = acc_type ? (acc_type.charAt(0).toUpperCase() + acc_type.slice(1).toLowerCase()) : 'Accommodation';
   const roomsCount = rooms || 1;
   const bookedDate = BookingDate; 
+
+  const defaultCheckInTime = 'From 03:00 PM';
+  const defaultCheckOutTime = 'Till 11:00 AM';
+  const checkInVal = rawCheckInTime || defaultCheckInTime;
+  const checkOutVal = rawCheckOutTime || defaultCheckOutTime;
+  const checkInTime = String(checkInVal).toLowerCase().startsWith('from') ? checkInVal : `From ${checkInVal}`;
+  const checkOutTime = (String(checkOutVal).toLowerCase().startsWith('till') || String(checkOutVal).toLowerCase().startsWith('until'))
+    ? checkOutVal
+    : `Till ${checkOutVal}`;
   
   let parsedActivities = [];
   if (activities) {
@@ -1566,8 +1601,8 @@ async function sendPdfEmail(params) {
                     <td valign="top" style="padding: 14px; background: #FAF7F5; border-right: 1px solid #ECE4DC; font-size: 13px; line-height: 20px; color: #3E3834;">
                       <p style="padding-bottom: 6px;">Mobile: <b>${mobile}</b></p>
                       <p style="padding-bottom: 6px;">Email: <b>${email}</b></p>
-                      <p style="padding-bottom: 6px;">Check-In: <b>${CheckinDate}</b></p>
-                      <p style="padding-bottom: 6px;">Check-Out: <b>${CheckoutDate}</b></p>
+                      <p style="padding-bottom: 6px;">Check-In: <b>${CheckinDate}</b> <span style="color: #7D236F; font-size: 11.5px; font-weight: 600;">(${checkInTime})</span></p>
+                      <p style="padding-bottom: 6px;">Check-Out: <b>${CheckoutDate}</b> <span style="color: #7D236F; font-size: 11.5px; font-weight: 600;">(${checkOutTime})</span></p>
                       <p style="padding-bottom: 6px;">Rooms: <b>${roomsCount}</b></p>
                       <p style="padding-bottom: 6px;">Adults: <b>${adult}</b></p>
                       
@@ -1850,7 +1885,7 @@ router.post("/success/verify/:txnid", async (req, res) => {
       console.log("📧 Guest email:", recipientEmail);
 
       const [accommodations] = await pool.execute(`
-        SELECT name, address, latitude, longitude, owner_id, type
+        SELECT name, address, latitude, longitude, owner_id, type, rules_and_policies
         FROM accommodations WHERE id = ?`,
         [bk.accommodation_id]
       );
@@ -1858,6 +1893,16 @@ router.post("/success/verify/:txnid", async (req, res) => {
 
       const acc = accommodations[0] || {};
       console.log("🏡 Selected accommodation:", acc);
+
+      let accRules = {};
+      try {
+        accRules = typeof acc.rules_and_policies === 'string'
+          ? JSON.parse(acc.rules_and_policies)
+          : (acc.rules_and_policies || {});
+      } catch (e) {}
+
+      const checkInTime = accRules.checkInTime || 'From 03:00 PM';
+      const checkOutTime = accRules.checkOutTime || 'Till 11:00 AM';
 
       const owner_id = acc.owner_id;
       console.log("👤 Owner ID:", owner_id);
@@ -1884,6 +1929,8 @@ router.post("/success/verify/:txnid", async (req, res) => {
           BookingDate: formattedDate,
           CheckinDate: formatDate(bk.check_in),
           CheckoutDate: formatDate(bk.check_out),
+          checkInTime,
+          checkOutTime,
           totalPrice: bk.total_amount,
           advancePayable: bk.advance_amount,
           remainingAmount: remainingAmount.toFixed(2),
@@ -1955,12 +2002,23 @@ router.get("/details/:txnid", async (req, res) => {
     // Step 2: Fetch accommodation details
 
     const [accommodations] = await pool.execute(
-      `SELECT name, address, latitude, longitude ,owner_id,type FROM accommodations WHERE id = ?`,
+      `SELECT name, address, latitude, longitude ,owner_id,type, rules_and_policies FROM accommodations WHERE id = ?`,
 
       [booking.accommodation_id]
     );
 
     const accommodation = accommodations[0] || {};
+
+    let accRules = {};
+    try {
+      accRules = typeof accommodation.rules_and_policies === 'string'
+        ? JSON.parse(accommodation.rules_and_policies)
+        : (accommodation.rules_and_policies || {});
+    } catch (e) {}
+
+    accommodation.rulesAndPolicies = accRules;
+    accommodation.checkInTime = accRules.checkInTime || 'From 03:00 PM';
+    accommodation.checkOutTime = accRules.checkOutTime || 'Till 11:00 AM';
 
     const owner_id = accommodation.owner_id;
 
