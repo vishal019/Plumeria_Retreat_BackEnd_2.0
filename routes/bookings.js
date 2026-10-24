@@ -87,52 +87,42 @@ router.get("/", async (req, res) => {
 
     const [bookings] = await pool.execute(
       `
-
       SELECT 
-
         b.id,
-
         b.guest_name,
-
         b.guest_email,
-
         b.guest_phone,
         b.food_veg,
         b.food_nonveg,
         b.food_jain,
-
         a.name AS accommodation_name,
-
         DATE_FORMAT(b.check_in, '%Y-%m-%d') AS check_in,
-
         DATE_FORMAT(b.check_out, '%Y-%m-%d') AS check_out,
-
-
-
-
-
-
         b.adults,
-
         b.children,
-
         b.rooms,
-
         b.total_amount,
-
+        b.advance_amount,
         b.payment_status,
         b.payment_txn_id,
         b.created_at,
         b.meal_plan,
-        b.meal_plan_price
+        b.meal_plan_price,
+        b.extra_adults,
+        b.base_price,
+        b.extra_adult_price,
+        b.child_price,
+        b.notes,
+        b.activities,
+        b.activities_total,
+        b.coupon_code,
+        b.discount_amount,
+        b.full_amount,
+        b.accommodation_id
       FROM bookings b
-
       LEFT JOIN accommodations a ON b.accommodation_id = a.id
-
       ORDER BY b.created_at DESC
-
       LIMIT ? OFFSET ?
-
     `,
       [parseInt(limit), parseInt(offset)]
     );
@@ -210,6 +200,13 @@ router.post("/", async (req, res) => {
       child_price = 0,
     } = req.body;
 
+    const resolvedMealPlan = (req.body.meal_plan !== undefined && req.body.meal_plan !== null && req.body.meal_plan !== '')
+      ? String(req.body.meal_plan).trim().toUpperCase()
+      : (req.body.mealPlan !== undefined && req.body.mealPlan !== null && req.body.mealPlan !== '')
+      ? String(req.body.mealPlan).trim().toUpperCase()
+      : null;
+    const resolvedMealPlanPrice = parseFloat(req.body.meal_plan_price ?? req.body.mealPlanPrice) || 0;
+
     console.log(req.body);
 
     const requiredFields = [
@@ -236,11 +233,19 @@ router.post("/", async (req, res) => {
         });
     }
 
-    const totalGuests = adults + children;
+    const parsedAdults = parseInt(adults, 10) || 0;
+    const parsedChildren = parseInt(children, 10) || 0;
+    const parsedExtraAdults = parseInt(extra_adults, 10) || 0;
+    const parsedRooms = parseInt(rooms, 10) || 1;
 
-    const totalFood = food_veg + food_nonveg + food_jain;
+    const totalGuests = parsedAdults + parsedChildren + parsedExtraAdults;
 
-    if (totalFood !== totalGuests) {
+    const totalFood =
+      (parseInt(food_veg, 10) || 0) +
+      (parseInt(food_nonveg, 10) || 0) +
+      (parseInt(food_jain, 10) || 0);
+
+    if (totalFood > 0 && totalFood !== totalGuests) {
       return res
         .status(400)
         .json({
@@ -261,7 +266,7 @@ router.post("/", async (req, res) => {
         .json({ success: false, error: "Invalid amount values" });
     }
 
-    if (adults < 1 || rooms < 1) {
+    if (parsedAdults < 1 || parsedRooms < 1) {
       return res
         .status(400)
         .json({
@@ -290,9 +295,9 @@ router.post("/", async (req, res) => {
     package_id,
     check_in,
     check_out,
-    adults,
-    children,
-    rooms,
+    parsedAdults,
+    parsedChildren,
+    parsedRooms,
     food_veg,
     food_nonveg,
     food_jain,
@@ -300,17 +305,16 @@ router.post("/", async (req, res) => {
     advance_amount,
     payment_status,
     payment_txn_id,
-    // Add the new values here (make sure to extract them from req.body first)
-    req.body.coupon || null,        
+    req.body.coupon || req.body.coupon_code || null,        
     req.body.discount || 0,
     req.body.full_amount || null,
     new Date(),
-    meal_plan,
-    meal_plan_price,
+    resolvedMealPlan,
+    resolvedMealPlanPrice,
     req.body.notes || null,
     req.body.activities ? (typeof req.body.activities === 'string' ? req.body.activities : JSON.stringify(req.body.activities)) : null,
     req.body.activities_total || 0,
-    extra_adults || 0,
+    parsedExtraAdults,
     base_price || 0,
     extra_adult_price || 0,
     child_price || 0
@@ -390,6 +394,13 @@ router.post("/offline", async (req, res) => {
       child_price = 0
     } = req.body;
 
+    const resolvedOfflineMealPlan = (req.body.meal_plan !== undefined && req.body.meal_plan !== null && req.body.meal_plan !== '')
+      ? String(req.body.meal_plan).trim().toUpperCase()
+      : (req.body.mealPlan !== undefined && req.body.mealPlan !== null && req.body.mealPlan !== '')
+      ? String(req.body.mealPlan).trim().toUpperCase()
+      : null;
+    const resolvedOfflineMealPlanPrice = parseFloat(req.body.meal_plan_price ?? req.body.mealPlanPrice) || 0;
+
     
     // Validate required fields
     const requiredFields = [
@@ -463,12 +474,13 @@ router.post("/offline", async (req, res) => {
     }
 
     // Validate numeric values
-    const total_adults = (parseInt(adults) || 0) + (parseInt(extra_adults) || 0);
-    const childrenNum = parseInt(children) || 0;
-    const roomsNum = parseInt(rooms) || 1;
-    const foodVegNum = parseInt(food_veg) || 0;
-    const foodNonVegNum = parseInt(food_nonveg) || 0;
-    const foodJainNum = parseInt(food_jain) || 0;
+    const baseAdultsNum = parseInt(adults, 10) || 0;
+    const extraAdultsNum = parseInt(extra_adults, 10) || 0;
+    const childrenNum = parseInt(children, 10) || 0;
+    const roomsNum = parseInt(rooms, 10) || 1;
+    const foodVegNum = parseInt(food_veg, 10) || 0;
+    const foodNonVegNum = parseInt(food_nonveg, 10) || 0;
+    const foodJainNum = parseInt(food_jain, 10) || 0;
     const totalAmountNum = parseFloat(total_amount);
     const advanceAmountNum = parseFloat(advance_amount) || 0;
 
@@ -492,7 +504,7 @@ router.post("/offline", async (req, res) => {
       });
     }
 
-    if (total_adults < 1 || roomsNum < 1) {
+    if (baseAdultsNum < 1 || roomsNum < 1) {
       await connection.rollback();
       return res.status(400).json({
         success: false,
@@ -524,7 +536,7 @@ router.post("/offline", async (req, res) => {
     }
 
     // Validate food count vs guest count
-    const totalGuests = total_adults + childrenNum;
+    const totalGuests = baseAdultsNum + extraAdultsNum + childrenNum;
     const totalFood = foodVegNum + foodNonVegNum + foodJainNum;
 
     if (totalFood > 0 && totalFood !== totalGuests) {
@@ -555,7 +567,7 @@ router.post("/offline", async (req, res) => {
           accommodationIdNum,
           check_in,
           check_out,
-          total_adults,
+          baseAdultsNum,
           childrenNum,
           roomsNum,
           foodVegNum,
@@ -566,12 +578,12 @@ router.post("/offline", async (req, res) => {
           payment_status,
           payment_txn_id,
           new Date(),
-          meal_plan,
-          meal_plan_price,
+          resolvedOfflineMealPlan,
+          resolvedOfflineMealPlanPrice,
           req.body.notes || null,
           req.body.activities ? (typeof req.body.activities === 'string' ? req.body.activities : JSON.stringify(req.body.activities)) : null,
           req.body.activities_total || 0,
-          extra_adults || 0,
+          extraAdultsNum,
           base_price || 0,
           extra_adult_price || 0,
           child_price || 0
@@ -732,7 +744,7 @@ router.post("/offline", async (req, res) => {
 
       mobile: booking.guest_phone,
 
-      totalPerson: booking.adults + booking.children,
+      totalPerson: (Number(booking.adults) || 0) + (Number(booking.extra_adults) || 0) + (Number(booking.children) || 0),
 
       adult: booking.adults,
 
@@ -1083,7 +1095,7 @@ router.post("/payments/razorpay/verify", async (req, res) => {
           advancePayable: bk.advance_amount,
           remainingAmount: remainingAmount.toFixed(2),
           mobile: bk.guest_phone,
-          totalPerson: (Number(bk.adults) || 1) + (Number(bk.children) || 0),
+          totalPerson: (Number(bk.adults) || 0) + (Number(bk.extra_adults) || 0) + (Number(bk.children) || 0),
           adult: bk.adults,
           child: bk.children,
           vegCount: bk.food_veg,
@@ -1608,6 +1620,10 @@ async function sendPdfEmail(params) {
                       
                       ${mealPlan ? `<p style="padding-bottom: 6px;">Meal Plan: <b>${mealPlan}</b></p>` : ''}
                       
+                      ${Number(extra_adults) > 0 ? `
+                        <p style="padding-bottom: 6px;">Extra Adults: <b>${extra_adults}</b></p>
+                      ` : ''}
+
                       ${child > 0 ? `
                         <p style="padding-bottom: 6px;">Children: <b>${child}</b></p>
                       ` : ''}
@@ -1617,7 +1633,7 @@ async function sendPdfEmail(params) {
                     <td valign="top" style="padding: 14px; background: #ffffff; font-size: 13px; line-height: 22px; color: #2D2520;">
                       <table width="100%" border="0" cellspacing="0" cellpadding="0">
                         <tr>
-                          <td style="color: #6E6761; padding-bottom: 4px;">Accommodation Base (${roomsCount} Room${roomsCount > 1 ? 's' : ''}, ${adult - (Number(extra_adults) || 0)} Base Adult${(adult - (Number(extra_adults) || 0)) > 1 ? 's' : ''}):</td>
+                          <td style="color: #6E6761; padding-bottom: 4px;">Accommodation Base (${roomsCount} Room${roomsCount > 1 ? 's' : ''}, ${adult} Base Adult${adult > 1 ? 's' : ''}):</td>
                           <td align="right" style="padding-bottom: 4px;"><b>₹${(Number(base_price) > 0 ? Number(base_price) : (Number(full_amount) - Number(activitiesTotal || 0) - Number(mealPlanPrice || 0) - (Number(extra_adults || 0) * Number(extra_adult_price || 0)) - (Number(child || 0) * Number(child_price || 0)))).toFixed(2)}</b></td>
                         </tr>
 
@@ -1935,7 +1951,7 @@ router.post("/success/verify/:txnid", async (req, res) => {
           advancePayable: bk.advance_amount,
           remainingAmount: remainingAmount.toFixed(2),
           mobile: bk.guest_phone,
-          totalPerson: bk.adults + bk.children,
+          totalPerson: (Number(bk.adults) || 0) + (Number(bk.extra_adults) || 0) + (Number(bk.children) || 0),
           adult: bk.adults,
           child: bk.children,
           vegCount: bk.food_veg,
@@ -2186,14 +2202,21 @@ const handleBookingUpdate = async (req, res) => {
     );
 
     // Update optional columns if they exist in schema
-    if (meal_plan !== undefined) {
+    const finalMealPlanToUpdate = req.body.meal_plan !== undefined 
+      ? (req.body.meal_plan ? String(req.body.meal_plan).trim().toUpperCase() : null)
+      : (req.body.mealPlan !== undefined ? (req.body.mealPlan ? String(req.body.mealPlan).trim().toUpperCase() : null) : undefined);
+    
+    if (finalMealPlanToUpdate !== undefined) {
       try {
-        await pool.execute("UPDATE bookings SET meal_plan = ? WHERE id = ?", [meal_plan, id]);
+        await pool.execute("UPDATE bookings SET meal_plan = ? WHERE id = ?", [finalMealPlanToUpdate, id]);
       } catch (_) {}
     }
-    if (req.body.meal_plan_price !== undefined) {
+    const finalMealPriceToUpdate = req.body.meal_plan_price !== undefined 
+      ? req.body.meal_plan_price 
+      : req.body.mealPlanPrice;
+    if (finalMealPriceToUpdate !== undefined) {
       try {
-        await pool.execute("UPDATE bookings SET meal_plan_price = ? WHERE id = ?", [parseFloat(req.body.meal_plan_price) || 0, id]);
+        await pool.execute("UPDATE bookings SET meal_plan_price = ? WHERE id = ?", [parseFloat(finalMealPriceToUpdate) || 0, id]);
       } catch (_) {}
     }
     if (req.body.notes !== undefined) {
@@ -2215,6 +2238,11 @@ const handleBookingUpdate = async (req, res) => {
     if (special_requests !== undefined) {
       try {
         await pool.execute("UPDATE bookings SET special_requests = ? WHERE id = ?", [special_requests, id]);
+      } catch (_) {}
+    }
+    if (req.body.extra_adults !== undefined) {
+      try {
+        await pool.execute("UPDATE bookings SET extra_adults = ? WHERE id = ?", [parseInt(req.body.extra_adults, 10) || 0, id]);
       } catch (_) {}
     }
 

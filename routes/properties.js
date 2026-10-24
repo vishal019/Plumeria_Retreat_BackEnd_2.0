@@ -297,7 +297,17 @@ const closeConnection = async (connection) => {
     if (connection) connection.release();
 };
 
+const slugify = (text) => {
+    return String(text || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+};
+
 const EXTENDED_COLUMNS = [
+    ['slug', 'VARCHAR(255) NULL UNIQUE'],
     ['meta_title', 'VARCHAR(255) NULL'],
     ['meta_description', 'TEXT NULL'],
     ['page_heading', 'VARCHAR(255) NULL'],
@@ -383,6 +393,9 @@ const toJson = (value, fallback) => {
 };
 
 const extractExtendedFields = (basicInfo = {}, current = {}, reqBody = {}) => ({
+    slug: basicInfo.slug
+        ? slugify(basicInfo.slug)
+        : (reqBody.slug ? slugify(reqBody.slug) : (basicInfo.name ? slugify(basicInfo.name) : (current.slug || null))),
     maxAdults: basicInfo.maxAdults ?? reqBody.maxAdults ?? reqBody.packages?.pricing?.maxAdults ?? current.max_adults ?? null,
     maxChildren: basicInfo.maxChildren ?? reqBody.maxChildren ?? reqBody.packages?.pricing?.maxChildren ?? current.max_children ?? null,
     metaTitle: basicInfo.metaTitle ?? reqBody.metaTitle ?? current.meta_title ?? null,
@@ -427,6 +440,7 @@ const extractExtendedFields = (basicInfo = {}, current = {}, reqBody = {}) => ({
 const formatListItem = (row) => ({
     id: row.id,
     name: row.name,
+    slug: row.slug || slugify(row.name),
     type: row.type,
     description: row.description,
     price: row.price,
@@ -487,8 +501,10 @@ const formatListItem = (row) => ({
 
 const formatDetail = (accommodation) => ({
     id: accommodation.id,
+    slug: accommodation.slug || slugify(accommodation.name),
     basicInfo: {
         name: accommodation.name || '',
+        slug: accommodation.slug || slugify(accommodation.name),
         description: accommodation.description || '',
         type: accommodation.type || '',
         capacity: accommodation.capacity || 2,
@@ -611,7 +627,7 @@ routes.get('/accommodations', async (req, res) => {
 
         let query = `
             SELECT
-                id, name, type, description, price, capacity, rooms, available,
+                id, name, slug, type, description, price, capacity, rooms, available,
                 features, images, image_details, amenity_ids, owner_id, city_id,
                 address, latitude, longitude, package_name, package_description,
                 package_images, adult_price, child_price, max_guests,
@@ -741,13 +757,16 @@ routes.get('/accommodations/stats', async (req, res) => {
     }
 });
 
-// GET /admin/properties/accommodations/:id
+// GET /admin/properties/accommodations/:id (supports both numeric ID and SEO slug)
 routes.get('/accommodations/:id', async (req, res) => {
     const { id } = req.params;
 
-    if (!Number.isInteger(Number(id)) || Number(id) < 0) {
-        return res.status(400).json({ error: 'Invalid accommodation ID format' });
+    if (!id || typeof id !== 'string' || !id.trim()) {
+        return res.status(400).json({ error: 'Invalid accommodation ID or slug format' });
     }
+
+    const trimmed = id.trim();
+    const isNumeric = /^\d+$/.test(trimmed);
 
     const connection = await createConnection();
 
@@ -763,8 +782,8 @@ routes.get('/accommodations/:id', async (req, res) => {
             FROM accommodations a
             LEFT JOIN users u ON a.owner_id = u.id
             LEFT JOIN cities c ON a.city_id = c.id
-            WHERE a.id = ?`,
-            [id]
+            WHERE ${isNumeric ? 'a.id = ?' : 'a.slug = ? OR a.id = ?'}`,
+            isNumeric ? [Number(trimmed)] : [trimmed, isNaN(Number(trimmed)) ? 0 : Number(trimmed)]
         );
 
         if (rows.length === 0) {
@@ -848,16 +867,19 @@ routes.post('/accommodations', async (req, res) => {
         const finalMaxPersonVilla = MaxPersonVilla || basicInfo?.maxGuests || maxGuests || null;
         const finalRatePersonVilla = RatePersonVilla || basicInfo?.adultPrice || adultPrice || null;
 
+        const finalSlug = extended.slug || slugify(name);
+
         const [result] = await connection.execute(
             `INSERT INTO accommodations
-            (name, description, type, capacity, rooms, price, features, images, available, owner_id, city_id,
+            (name, slug, description, type, capacity, rooms, price, features, images, available, owner_id, city_id,
              address, latitude, longitude, amenity_ids, package_name, package_description, package_images,
              adult_price, child_price, max_guests, max_adults, max_children, MaxPersonVilla, RatePerPerson, meal_plans,
              meta_title, meta_description, page_heading, image_details, room_numbers, activities,
              meal_details, how_to_reach, nearby_places, rules_and_policies, faqs, guest_stories, badge)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 name,
+                finalSlug,
                 description || null,
                 type,
                 capacity,
@@ -1002,9 +1024,11 @@ routes.put('/accommodations/:id', async (req, res) => {
             throw new Error('Missing required fields: name and type');
         }
 
+        const finalSlug = extended.slug || current.slug || slugify(name);
+
         const [result] = await connection.execute(
             `UPDATE accommodations SET
-                name = ?, description = ?, type = ?, capacity = ?, rooms = ?,
+                name = ?, slug = ?, description = ?, type = ?, capacity = ?, rooms = ?,
                 price = ?, features = ?, images = ?, available = ?, owner_id = ?,
                 city_id = ?, address = ?, latitude = ?, longitude = ?, amenity_ids = ?,
                 package_name = ?, package_description = ?, package_images = ?,
@@ -1019,7 +1043,7 @@ routes.put('/accommodations/:id', async (req, res) => {
                 updated_at = CURRENT_TIMESTAMP()
             WHERE id = ?`,
             [
-                name, description, type, Number(capacity), Number(rooms),
+                name, finalSlug, description, type, Number(capacity), Number(rooms),
                 Number(price), finalFeatures, finalImages, finalAvailable, finalOwnerId,
                 cityId, address, latitude, longitude, finalAmenityIds,
                 packageName, packageDescription, finalPackageImages,

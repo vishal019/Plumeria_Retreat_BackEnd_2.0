@@ -203,6 +203,7 @@ router.get(['/stats', '/summary'], async (req, res) => {
           b.payment_txn_id,
           b.meal_plan,
           b.meal_plan_price,
+          b.extra_adults,
           b.created_at
         FROM bookings b
         LEFT JOIN accommodations a ON b.accommodation_id = a.id
@@ -364,6 +365,7 @@ router.get('/recent-bookings', async (req, res) => {
         b.total_amount AS amount, 
         b.advance_amount AS advanceAmount,
         b.payment_status AS status,
+        b.extra_adults AS extraAdults,
         b.created_at AS createdAt
       FROM bookings b
       LEFT JOIN accommodations a ON b.accommodation_id = a.id
@@ -436,8 +438,9 @@ router.get('/booking/:id', async (req, res) => {
         cottageType: b.accommodation_name || 'Standard Accommodation',
         cottagesBooked: `${b.rooms || 1} Cottage`,
         adults: b.adults || 1,
+        extraAdults: b.extra_adults || 0,
         children: b.children || 0,
-        totalGuests: (b.adults || 1) + (b.children || 0),
+        totalGuests: (b.adults || 1) + (Number(b.extra_adults) || 0) + (b.children || 0),
         foodVeg: b.food_veg || 0,
         foodNonVeg: b.food_nonveg || 0,
         foodJain: b.food_jain || 0
@@ -546,9 +549,13 @@ router.post('/booking/:id/action', async (req, res) => {
         ]
       );
 
-      if (meal_plan !== undefined) {
+      const finalMealPlan = meal_plan !== undefined 
+        ? (meal_plan ? String(meal_plan).trim().toUpperCase() : null)
+        : (req.body.mealPlan !== undefined ? (req.body.mealPlan ? String(req.body.mealPlan).trim().toUpperCase() : null) : undefined);
+
+      if (finalMealPlan !== undefined) {
         try {
-          await pool.query('UPDATE bookings SET meal_plan = ? WHERE id = ?', [meal_plan, id]);
+          await pool.query('UPDATE bookings SET meal_plan = ? WHERE id = ?', [finalMealPlan, id]);
         } catch (_) {}
       }
       if (special_requests !== undefined) {

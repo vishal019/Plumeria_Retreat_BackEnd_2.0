@@ -93,6 +93,74 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Dynamic Sitemap generator for Google Web Crawler
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, name, slug, updated_at FROM accommodations WHERE available = 1 ORDER BY id ASC"
+    );
+
+    const baseUrl = 'https://plumeriaretreat.com';
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+
+    const staticPages = [
+      { path: '/', priority: '1.0', changefreq: 'daily' },
+      { path: '/explore', priority: '0.9', changefreq: 'daily' },
+      { path: '/gallery', priority: '0.7', changefreq: 'weekly' },
+      { path: '/about', priority: '0.6', changefreq: 'monthly' },
+      { path: '/contact', priority: '0.6', changefreq: 'monthly' },
+    ];
+
+    for (const p of staticPages) {
+      xml += `  <url>\n    <loc>${baseUrl}${p.path}</loc>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>\n`;
+    }
+
+    for (const acc of rows) {
+      const slugVal = acc.slug || String(acc.name || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || acc.id;
+
+      const lastmod = acc.updated_at ? new Date(acc.updated_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      xml += `  <url>\n    <loc>${baseUrl}/stays/${slugVal}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n`;
+    }
+
+    xml += `</urlset>`;
+
+    res.header('Content-Type', 'application/xml');
+    res.status(200).send(xml);
+  } catch (err) {
+    console.error('Error generating dynamic sitemap:', err);
+    res.status(500).send('Error generating sitemap');
+  }
+});
+
+// Dynamic robots.txt
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(
+`User-agent: Googlebot
+Allow: /
+Allow: /stays/
+Allow: /explore
+Allow: /gallery
+Allow: /about
+Allow: /contact
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /payment/
+Disallow: /failure
+Disallow: /cancel
+
+Sitemap: https://plumeriaretreat.com/sitemap.xml
+`
+  );
+});
+
 // Safe route loader function
 const loadRoutes = (routePath, routePrefix) => {
   try {
