@@ -773,7 +773,7 @@ routes.get('/accommodations/:id', async (req, res) => {
     try {
         await ensureExtendedSchema(connection);
 
-        const [rows] = await connection.execute(
+        let [rows] = await connection.execute(
             `SELECT
                 a.*,
                 u.name as owner_name,
@@ -785,6 +785,30 @@ routes.get('/accommodations/:id', async (req, res) => {
             WHERE ${isNumeric ? 'a.id = ?' : 'a.slug = ? OR a.id = ?'}`,
             isNumeric ? [Number(trimmed)] : [trimmed, isNaN(Number(trimmed)) ? 0 : Number(trimmed)]
         );
+
+        // Fallback: if looked up by slug and a.slug in DB is NULL/empty, match against slugify(a.name)
+        if (rows.length === 0 && !isNumeric) {
+            const targetSlug = slugify(trimmed);
+            const [allRows] = await connection.execute(
+                `SELECT
+                    a.*,
+                    u.name as owner_name,
+                    c.name as city_name,
+                    c.country as country
+                FROM accommodations a
+                LEFT JOIN users u ON a.owner_id = u.id
+                LEFT JOIN cities c ON a.city_id = c.id`
+            );
+            const matched = allRows.find(
+                (r) => slugify(r.slug || r.name) === targetSlug || slugify(r.name) === targetSlug
+            );
+            if (matched) {
+                rows = [matched];
+                if (!matched.slug) {
+                    connection.execute('UPDATE accommodations SET slug = ? WHERE id = ?', [targetSlug, matched.id]).catch(() => {});
+                }
+            }
+        }
 
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Accommodation not found' });

@@ -209,6 +209,37 @@ router.post("/", async (req, res) => {
 
     console.log(req.body);
 
+    // Resolve accommodation_id if missing or passed as slug/name
+    let resolvedAccommodationId = accommodation_id;
+    if (
+      resolvedAccommodationId === undefined ||
+      resolvedAccommodationId === null ||
+      resolvedAccommodationId === "" ||
+      isNaN(Number(resolvedAccommodationId)) ||
+      Number(resolvedAccommodationId) <= 0
+    ) {
+      const slugCandidate = req.body.accommodation_slug || req.body.slug || (typeof accommodation_id === "string" ? accommodation_id : null);
+      const nameCandidate = req.body.accommodation_name || null;
+      if (slugCandidate || nameCandidate) {
+        try {
+          const [accRows] = await connection.execute("SELECT id, name, slug FROM accommodations");
+          const toSlug = (s) => String(s || "").toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
+          const targetSlug = slugCandidate ? toSlug(slugCandidate) : toSlug(nameCandidate);
+          const matchedAcc = accRows.find(
+            (r) =>
+              (slugCandidate && (toSlug(r.slug) === targetSlug || toSlug(r.name) === targetSlug)) ||
+              (nameCandidate && String(r.name || "").trim().toLowerCase() === String(nameCandidate).trim().toLowerCase())
+          );
+          if (matchedAcc) {
+            resolvedAccommodationId = matchedAcc.id;
+            req.body.accommodation_id = matchedAcc.id;
+          }
+        } catch (lookupErr) {
+          console.warn("[bookings] accommodation slug lookup warning:", lookupErr.message);
+        }
+      }
+    }
+
     const requiredFields = [
       "guest_name",
       "accommodation_id",
@@ -291,7 +322,7 @@ router.post("/", async (req, res) => {
     guest_name,
     guest_email,
     guest_phone || null,
-    accommodation_id,
+    resolvedAccommodationId,
     package_id,
     check_in,
     check_out,
